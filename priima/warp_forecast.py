@@ -201,9 +201,9 @@ def is_point_inland(point):
     Determins if a point belongs to the land.
     """
     if point[1] > 0:
-        shapefile = "dnps_shapefiles/shapefiles/arctic_landmask.shp"
+        shapefile = "shapefiles/arctic_landmask.shp"
     else:
-        shapefile = "dnps_shapefiles/shapefiles/antarctic_landmask.shp"
+        shapefile = "shapefiles/antarctic_landmask.shp"
 
     point = shapely.geometry.Point(point[0], point[1])  # lon, lat
 
