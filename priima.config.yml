@@ -1,0 +1,6 @@
+---
+paths:
+    data_path: "/data/"
+    secrets_path: "/data/apps/priima/"
+    grid_path: "/data/icon_grid/"
+gcp_separation: 750

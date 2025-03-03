@@ -1,0 +1,3 @@
+[submodule "fast_cast/pyboostcvconverter"]
+	path = fast_cast/pyboostcvconverter
+	url = https://github.com/Algomorph/pyboostcvconverter.git

@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# Copyright 2025, Drift+Noise GmbH
+
+# This file is part of PRIIMA.
+# PRIIMA is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+# PRIIMA is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+# You should have received a copy of the GNU General Public License along with
+# PRIIMA. If not, see https://www.gnu.org/licenses/gpl-3.0.html.
+
+set -e
+
+if [ ! -d "venv" ]
+then
+    PYTHON=$(command -v python3)
+    virtualenv --python="$PYTHON" venv
+fi
+
+# shellcheck source=/dev/null  # don't check venv activate script
+source venv/bin/activate
+pip install -U pip
+pip install -r base_requirements.txt
+
+# header paths must be specified so that GDAL builds inside the virtualenv
+CFLAGS=$(gdal-config --cflags) pip install "GDAL<=$(gdal-config --version)"
+
+pip install -r requirements.txt
+
+# handle Cartopy installation on different GEOS versions
+# Cartopy only supports GEOS 3.7.1 up to and including 0.19.0.post1
+GEOS_VERSION="$(geos-config --version)"
+CARTOPY_20_GEOS_VERSION="3.7.2"
+COMPATIBLE_CARTOPY_20_GEOS_VERSION=$(echo -e "$GEOS_VERSION\\n$CARTOPY_20_GEOS_VERSION" | sort -V | tail -n 1)
+if [ "$GEOS_VERSION" == "$COMPATIBLE_CARTOPY_20_GEOS_VERSION" ]
+then
+    pip install Cartopy==0.21.0
+else
+    pip install Cartopy==0.19.0.post1
+fi

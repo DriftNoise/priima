@@ -1,0 +1,17 @@
+pyproj==3.2.1
+matplotlib==3.5.3
+netCDF4==1.6.3
+scipy==1.7.3
+opencv-python==4.7.0.72
+opencv-contrib-python==4.7.0.72
+Shapely==1.8.5.post1 --no-binary=Shapely
+Fiona==1.9.1
+pyshp==2.3.1
+pytest==7.2.2
+python-slugify==8.0.1
+scp==0.14.5
+pytest-cov==4.0.0
+pyyaml==6.0
+flake8==5.0.4
+libyear==0.2.1
+pylint==2.16.4

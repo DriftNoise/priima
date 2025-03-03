@@ -1,0 +1,5 @@
+services:
+    priima:
+        build:
+            context: .
+            dockerfile: docker/priima/Dockerfile
