@@ -11,7 +11,7 @@
 # You should have received a copy of the GNU General Public License along with
 # PRIIMA. If not, see https://www.gnu.org/licenses/gpl-3.0.html.
 
-FROM python:3.10-bookworm
+FROM python:3.10-bookworm AS base
 
 RUN apt-get update && apt-get install -y gdal-bin=3.6.2+dfsg-1+b2 \
  libgdal-dev=3.6.2+dfsg-1+b2 nco=5.1.4-1+deb12u1 cdo=2.1.1-1+deb12u1 \
@@ -42,6 +42,24 @@ RUN chown -R ossi:ossi $APP_ROOT/fast_cast/
 USER ossi
 RUN ./devops/bin/install-deps \
  && make fast_cast
+
+FROM base AS create_landmasks
+
+RUN pip install geopandas==1.0.1 \
+ && mkdir $APP_ROOT/shapefiles \
+ && wget -q -O $APP_ROOT/shapefiles/land-polygons-split-4326.zip \
+ https://osmdata.openstreetmap.de/download/land-polygons-split-4326.zip \
+ && unzip -o -q $APP_ROOT/shapefiles/land-polygons-split-4326.zip \
+ -d $APP_ROOT/shapefiles/
+RUN python3 devops/bin/create_landmask_shapefiles.py \
+ --data-path $APP_ROOT/shapefiles
+
+FROM base
+
+COPY --from=create_landmasks $APP_ROOT/shapefiles/arctic_landmask.* \
+ $APP_ROOT/shapefiles/
+COPY --from=create_landmasks $APP_ROOT/shapefiles/antarctic_landmask.*\
+ $APP_ROOT/shapefiles/
 
 RUN mkdir $APP_ROOT/icon_grid \
  && wget -q -O $APP_ROOT/icon_grid/ICON_GLOBAL2WORLD_0125_EASY.tar.bz2 \
