@@ -13,28 +13,23 @@ You should have received a copy of the GNU General Public License along with
 PRIIMA. If not, see https://www.gnu.org/licenses/gpl-3.0.html.
 """
 
-import argparse
 import csv
 import datetime
-import os
 import re
 import sys
 from glob import glob
 from pathlib import Path
-from subprocess import call
 
 import numpy as np
 from osgeo import gdal
-from slugify import slugify
 
 from priima.config import Config
 from priima.drift_handler import DriftHandler
 from priima.gcp import create_gcp_from_ul_lr, export_gcp_2csv
-from priima.icon import set_up_icon_subpath
-from priima.order import load_order
+from priima.geo_tools import get_center_coordinate
 from priima.preprocessing import warp_image
 from priima.shapefile import base_shapefile_name, convert_csv_to_shp
-from priima.smoc import load_tidal_drift, select_smoc_files
+from priima.video import create_video
 from priima.warp_forecast import (compute_averaged_area_drift,
                                   compute_time_range,
                                   create_transformation_matrix, reproject2roi,
@@ -43,39 +38,25 @@ from priima.wind import compute_drift_from_wind
 
 
 def main():
-    args = parse_arguments()
+    center_coords = get_center_coordinate()
+    Config.set_attribute('center', [center_coords[0], center_coords[1]])
 
-    order, order_data = load_order(order_file=args.order_file)
+    output_dir = create_output_directory(
+        image_fname=Path(Config.instance().image),
+        data_source=Config.instance().data_source,
+        forecast_duration=Config.instance().forecast_duration
+    )
+    Config.set_attribute("output_dir", output_dir)
 
-    if args.forecast_duration is not None:
-        forecast_duration = float(args.forecast_duration)
-    else:
-        forecast_duration = order.forecast_duration
-
-    data_source = order.data_source
-    grid_method = order.grid_method
-
-    # create working directory for this order's forecast
-    customer_name_slug = slugify(order.customer_name)
-    order_name_slug = slugify(order.order_name)
-    config = Config()
-    order_data_path = os.path.join(
-        config.paths.data_path,
-        'forecasts', customer_name_slug, order_name_slug)
-    if not os.path.exists(order_data_path):
-        os.makedirs(order_data_path)
-
-    raw_scene_full_path = Path(
-        order_data_path, args.sentinel_1_file
-    ).as_posix()
-    initial_sar_file = reproject2roi(raw_scene_full_path, order)
-    ds = gdal.Open(initial_sar_file)
+    initial_sar_file = reproject2roi(Path(Config.instance().image))
+    ds = gdal.Open(str(initial_sar_file))
     proj = ds.GetProjection()
-    gcp_list = create_gcp_from_ul_lr(ds, proj, grid_method, order_data)
+    gcp_list = create_gcp_from_ul_lr(ds, proj)
 
     export_gcp_2csv(gcp_list)
 
-    time_range = compute_time_range(initial_sar_file, forecast_duration)
+    time_range = compute_time_range(
+        initial_sar_file, Config.instance().forecast_duration)
 
     # for local point warp and time varying
     dt = (time_range[1] - time_range[0]).total_seconds()/60./60.
@@ -84,13 +65,13 @@ def main():
     gcp_list_dynamic = gcp_list[:]
     drifted_coord = []
 
-    if data_source in ('TOPAZ', 'NEXTSIM'):
+    if Config.instance().data_source in ('TOPAZ', 'NEXTSIM'):
 
         avrg_drift = []
         for gld in gcp_list_dynamic:
             drifted_coord.append([gld.GCPX, gld.GCPY, time_range[0]])
 
-        ncfile_list = select_drift_files(time_range, order)
+        ncfile_list = select_drift_files(time_range)
         file_dates = netcdf_file_dates(ncfile_list)
         for it in forecast_steps:
             it = it + 1
@@ -103,8 +84,9 @@ def main():
             ncfile = ncfile_list[file_index]
             time_range_step = [time_range_step, time_range_step]
             try:
-                drift_handler = DriftHandler(ncfile, time_range_step, order,
-                                             gcp_list_dynamic)
+                drift_handler = DriftHandler(
+                    ncfile, time_range_step, gcp_list_dynamic
+                )
                 drift = \
                     drift_handler.compute_drift()
                 avrg_drifti = compute_averaged_area_drift(drift)
@@ -114,52 +96,42 @@ def main():
 
             except ValueError:
                 continue
-            gcp_list_dynamic = update_point_location(
-                order, gcp_list_dynamic, drift)
+            gcp_list_dynamic = update_point_location(gcp_list_dynamic, drift)
 
             for gld in gcp_list_dynamic:
                 drifted_coord.append([gld.GCPX, gld.GCPY, time_range_step[0]])
 
-            gcp_list = create_gcp_from_ul_lr(
-                ds, proj, grid_method, order_data)
+            gcp_list = create_gcp_from_ul_lr(ds, proj)
 
             starting_pos, ending_pos, \
                 lon_projected_list, lat_projected_list = \
-                create_transformation_matrix(
-                    ds, gcp_list, gcp_list_dynamic, grid_method)
+                create_transformation_matrix(ds, gcp_list, gcp_list_dynamic)
 
             # print("Drift is: ", drift)
             pixels_drift = {'start': starting_pos, 'end': ending_pos,
                             'lon_projected': lon_projected_list,
                             'lat_projected': lat_projected_list}
-            forecast_stepi = '{0:d}_{1:02d}'.format(int(forecast_duration),
-                                                    it)
-            warp_image(forecast_stepi, initial_sar_file, pixels_drift,
-                       data_source, grid_method, order_data_path,
-                       args.store_training_data)
+            forecast_stepi = '{0:d}_{1:02d}'.format(
+                Config.instance().forecast_duration, it
+            )
+            warp_image(
+                forecast_step=forecast_stepi,
+                forecast_duration=Config.instance().forecast_duration,
+                image_path=initial_sar_file,
+                pixels_drift=pixels_drift,
+            )
         shapename = \
             '{}.csv'.format(base_shapefile_name(initial_sar_file))
-        with open(os.path.join(order_data_path,
-                               shapename), mode='w') as fh:
+        with open(Config.instance().output_dir / shapename, mode='w') as fh:
             writer = csv.writer(fh, delimiter=',', quotechar='"',
                                 quoting=csv.QUOTE_MINIMAL)
             writer.writerow(['x', 'y', 'timestep'])
             for line in drifted_coord:
                 writer.writerow(line)
 
-        save_averaged_drift(order_data_path, avrg_drift)
+        save_averaged_drift(avrg_drift)
 
-    elif data_source == 'ICON':
-        # clean up ICON folders
-        set_up_icon_subpath(config.paths.icon_path)
-
-        call(("rm {}/converted/*".format(config.paths.icon_path)), shell=True)
-        call(("rm {}/*.grib2".format(config.paths.icon_path)), shell=True)
-        tide_data = 0
-        if order.use_tides:
-            smoc_files = select_smoc_files(time_range, config)
-            tide_data = load_tidal_drift(
-                smoc_files, time_range, order, config)
+    elif Config.instance().data_source == 'ICON':
         for gld in gcp_list_dynamic:
             drifted_coord.append([gld.GCPX, gld.GCPY, time_range[0]])
 
@@ -167,70 +139,86 @@ def main():
             it = it + 1
             print(f"\nForecast step {it} of {dt_hours}")
             time_step = time_range[0] + datetime.timedelta(hours=it)
-            drift = compute_drift_from_wind(
-                config, time_step, data_source, order,
-                gcp_list_dynamic, tide_data)
+            drift = compute_drift_from_wind(time_step, gcp_list_dynamic)
 
-            gcp_list_dynamic = update_point_location(
-                order, gcp_list_dynamic, drift)
+            gcp_list_dynamic = update_point_location(gcp_list_dynamic, drift)
             for gld in gcp_list_dynamic:
                 drifted_coord.append([gld.GCPX, gld.GCPY, time_step])
 
-            gcp_list = create_gcp_from_ul_lr(ds, proj, grid_method, order_data)
+            gcp_list = create_gcp_from_ul_lr(ds, proj)
             starting_pos, ending_pos, lon_projected_list, \
                 lat_projected_list = \
-                create_transformation_matrix(
-                        ds, gcp_list, gcp_list_dynamic, grid_method)
+                create_transformation_matrix(ds, gcp_list, gcp_list_dynamic)
 
             pixels_drift = {'start': starting_pos, 'end': ending_pos,
                             'lon_projected': lon_projected_list,
                             'lat_projected': lat_projected_list}
 
-            forecast_stepi = '{0:d}_{1:02d}'.format(int(forecast_duration),
-                                                    it)
-            warp_image(forecast_stepi, initial_sar_file, pixels_drift,
-                       data_source, grid_method, order_data_path,
-                       args.store_training_data)
+            forecast_stepi = '{0:d}_{1:02d}'.format(
+                Config.instance().forecast_duration, it
+            )
+            warp_image(
+                forecast_step=forecast_stepi,
+                forecast_duration=Config.instance().forecast_duration,
+                image_path=initial_sar_file,
+                pixels_drift=pixels_drift,
+            )
             shapename = \
                 '{}.csv'.format(base_shapefile_name(initial_sar_file))
-        with open(os.path.join(order_data_path,
-                               shapename), mode='w') as fh:
+        with open(Config.instance().output_dir / shapename, mode='w') as fh:
             writer = csv.writer(fh, delimiter=',', quotechar='"',
                                 quoting=csv.QUOTE_MINIMAL)
             writer.writerow(['x', 'y', 'timestep'])
             for line in drifted_coord:
                 writer.writerow(line)
     else:
-        raise ValueError("Unknown data source {}".format(data_source))
+        raise ValueError(
+            "Unknown data source {}".format(Config.instance().data_source)
+        )
 
     ds = None
     # Create Shapefiles for easy viewing
-    convert_csv_to_shp(order_data_path, initial_sar_file)
+    convert_csv_to_shp(initial_sar_file)
+    # Make a video if requested
+    if Config.instance().video:
+        video_fpath = create_video(image_dir=Config.instance().output_dir)
+        log_msg = "Created video output here: %s"
+        print(log_msg % video_fpath)
 
 
-def parse_arguments():
-    parser = argparse.ArgumentParser(
-        description='Generate the ice image of tomorrow')
-    parser.add_argument(
-        '--forecast-duration',
-        help='Number of hours in the future to run forecast')
-    parser.add_argument(
-        '--order-file',
-        help='File describing parameters of an order to process')
+def create_output_directory(
+    *,
+    image_fname: Path,
+    data_source: str,
+    forecast_duration: int
+):
+    """Builds the path to and creates an output directory"""
+    match = re.search(
+        r"_(?P<start_time>\d{8}T\d{6})", str(image_fname)
+    )
+    try:
+        start_time_string = match.group('start_time')
+    except AttributeError as exc:
+        err_msg = (
+            "No date of format _<YYYYMMDD>T<hhmmss> found in filename %s"
+        )
+        raise ValueError(err_msg % image_fname) from exc
+    sat = "sat"
+    if "s1" in Path(Config.instance().image).name.lower():
+        sat = "s1"
+    elif "rcm" in Path(Config.instance().image).name.lower():
+        sat = "rcm"
+    output_dir_name = (
+        f"{sat}_{start_time_string}_priima_{data_source}_"
+        f"{forecast_duration}h"
+    )
+    output_dir = Config.instance().out_path / output_dir_name
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    parser.add_argument(
-        '--store-training-data', default=False, action='store_true',
-        help='Store the pts*.txt files needed \
-            for neural network model training')
-    parser.add_argument(
-        '--sentinel-1-file',
-        help='Name of the Sentinel-1 file to process')
-    args = parser.parse_args()
-
-    return args
+    return output_dir
 
 
-def select_drift_files(time_range, order):
+def select_drift_files(time_range):
     """
     Selects appropriate drift NetCDF files to run the forecast.
     It always selects the forecast days that are closer to the conducted date.
@@ -239,27 +227,17 @@ def select_drift_files(time_range, order):
         The time range for which the relevant topaz files will be selected
     :type time_range:
         list of datetime.datetime objects
-    :param order:
-        An order object
-    :type order:
-        priima.order.Order object
     """
     start_date = time_range[0].replace(hour=0, minute=0)
     end_date = time_range[1].replace(hour=0, minute=0)
     date_range = [start_date + datetime.timedelta(days=num_days)
                   for num_days in range(0, (end_date - start_date).days + 1)]
-    if order.data_source == "TOPAZ":
-        ice_drift_file_glob = os.path.join(
-            Config.instance.paths.data_path,
-            "L3", "ice_drift_forecasts", "topaz4", '*.nc')
-    elif order.data_source == "NEXTSIM":
-        ice_drift_file_glob = os.path.join(
-            Config.instance.paths.data_path,
-            "L3", "ice_drift_forecasts", "nextsim", '*.nc')
+    if Config.instance().data_source in ("TOPAZ", "NEXTSIM"):
+        ice_drift_file_glob = str(Config.instance().data_path / '*.nc')
     else:
         print("Unknown data_source, should be TOPAZ/NEXTSIM")
 
-    all_ice_drift_files = glob(ice_drift_file_glob)
+    all_ice_drift_files = [Path(file) for file in glob(ice_drift_file_glob)]
     # filter for only TOPAZ4 files; these files start with a datestamp in
     # the format YYYYMMDD, hence we filter for files which only start with
     # 8 digits.  The aggregated TOPAZ4 drift files all start with the word
@@ -267,13 +245,13 @@ def select_drift_files(time_range, order):
     # files found in the given path.
     topaz_list = [
         fname for fname in all_ice_drift_files
-        if re.match(r'^\d{8}', os.path.basename(fname))]
+        if re.match(r'^\d{8}', fname.name)]
 
     topaz_list_forecast_day = \
-        [os.path.basename(topaz_file).split("_")[0]
+        [topaz_file.name.split("_")[0]
          for topaz_file in topaz_list]
     topaz_list_day_of_forecast_run = \
-        [os.path.basename(topaz_file).split("-")[-2]
+        [topaz_file.name.split("-")[-2]
          for topaz_file in topaz_list]
 
     matched_files = []
@@ -310,7 +288,7 @@ def select_drift_files(time_range, order):
 def file_validation(filenames):
     for fl in filenames:
         try:
-            ds = gdal.Open(fl, gdal.GA_ReadOnly)
+            ds = gdal.Open(str(fl), gdal.GA_ReadOnly)
             ds_stats = ds.GetRasterBand(1).GetStatistics(0, 1)
             if np.allclose(ds_stats[0:2], 0.0):
                 print("File contains only 0s, PRIIMA will STOP!!")
@@ -321,9 +299,10 @@ def file_validation(filenames):
             sys.exit(20)
 
 
-def save_averaged_drift(order_data_path, avrg_drift):
-    with open(os.path.join(order_data_path,
-                           'averaged_drift.csv'), mode='w') as drfile:
+def save_averaged_drift(avrg_drift):
+    with open(
+        Config.instance().output_dir / 'averaged_drift.csv', mode='w'
+            ) as drfile:
         dr_writer = csv.writer(
             drfile, delimiter=',',
             quotechar='"', quoting=csv.QUOTE_MINIMAL)
@@ -337,7 +316,7 @@ def netcdf_file_dates(netcdf_file_list):
     regex = re.compile(r'^(?P<datestamp>\d{8})_.*\.nc$')
     file_dates = []
     for fname in netcdf_file_list:
-        match = regex.search(os.path.basename(fname))
+        match = regex.search(fname.name)
         datestamp = match.group('datestamp')
         date = datetime.datetime.strptime(datestamp, "%Y%m%d").date()
         file_dates.append(date)

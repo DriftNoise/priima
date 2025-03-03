@@ -13,7 +13,6 @@ You should have received a copy of the GNU General Public License along with
 PRIIMA. If not, see https://www.gnu.org/licenses/gpl-3.0.html.
 """
 
-import json
 import os
 import tempfile
 from datetime import datetime
@@ -25,34 +24,12 @@ import numpy as np
 from netCDF4 import Dataset
 from pyproj import Proj, transform
 
+from priima.config import Config
 from priima.drift_handler import DriftHandler
-from priima.order import Order
 
 
 class TestDriftHandler(TestCase):
     def setUp(self):
-        with tempfile.NamedTemporaryFile(mode="w") as temp_fh:
-            order_string = dict(
-                customer_name="Foufoutos",
-                customer_email_address="foufoutos@example.com",
-                order_name="order_name",
-                sentinel1_order_number=40000,
-                forecast_duration=4,
-                center=[50, 25],
-                region_size=200,
-                resolution=30,
-                drift_filename="/path/to/drift.nc",
-                data_source="TOPAZ",
-                grid_method="mpl",
-                use_tides="False"
-            )
-            temp_fh.write(json.dumps(order_string))
-            temp_fh.flush()
-            temp_fh.seek(0)
-            with open(temp_fh.name) as fh:
-                order_data = json.load(fh)
-                self.order = Order(order_data=order_data)
-
         self.time_range = [datetime(2022, 12, 10, 20, 0),
                            datetime(2022, 12, 10, 20, 0)]
 
@@ -70,59 +47,73 @@ class TestDriftHandler(TestCase):
             ])
 
     def test_the_constructor_sets_attributes(self):
-        drift_handler = DriftHandler(self.ncfile, self.time_range,
-                                     self.order, self.gcp_list)
+        drift_handler = DriftHandler(
+            self.ncfile, self.time_range, self.gcp_list
+        )
 
-        self.assertEqual(drift_handler.ncfile, self.ncfile)
+        self.assertEqual(drift_handler.ncfiles, [self.ncfile])
 
     def test_subset_roi_from_meshgrid_results_to_expected_roi_for_nh(self):
+        Config.set_attribute('center', [50, 25])
         # priima assumes 4x larger region size hence effectively the
         # size is 200*4km. 800km around center = 50, 25 is roughly 10 degrees
         # in lon and 6 degrees in lat.
-        drift_handler = DriftHandler(self.ncfile, self.time_range,
-                                     self.order, self.gcp_list)
+        drift_handler = DriftHandler(
+            self.ncfile, self.time_range, self.gcp_list
+        )
 
-        roi_drift_dict = \
-            drift_handler.subset_roi_from_meshgrid(self.drift_dict)
-        expected_min_lon = 19
-        expected_max_lon = 30
-        expected_min_lat = 47
-        expected_max_lat = 53
+        with patch(
+            'priima.drift_handler.get_half_region_size',
+            return_value=100_000.0
+        ) as get_half_region_size:
+            roi_drift_dict = \
+                drift_handler.subset_roi_from_meshgrid(self.drift_dict)
+            get_half_region_size.assert_called_once()
+            expected_min_lon = 19
+            expected_max_lon = 30
+            expected_min_lat = 47
+            expected_max_lat = 53
 
-        self.assertEqual(roi_drift_dict["lon"].min(), expected_min_lon)
-        self.assertEqual(roi_drift_dict["lon"].max(), expected_max_lon)
-        self.assertEqual(roi_drift_dict["lat"].min(), expected_min_lat)
-        self.assertEqual(roi_drift_dict["lat"].max(), expected_max_lat)
+            self.assertEqual(roi_drift_dict["lon"].min(), expected_min_lon)
+            self.assertEqual(roi_drift_dict["lon"].max(), expected_max_lon)
+            self.assertEqual(roi_drift_dict["lat"].min(), expected_min_lat)
+            self.assertEqual(roi_drift_dict["lat"].max(), expected_max_lat)
 
     def test_subset_roi_from_meshgrid_results_to_expected_roi_for_sh(self):
         # priima assumes 4x larger region size hence effectively the
         # size is 200*4km. 800km around center = 50, 25 is roughly 10 degrees
         # in lon and 6 degrees in lat.
-        self.order.center = [-50, 25]
+        Config.set_attribute('center', [-50, 25])
         self.drift_dict["lat"] = np.linspace(0, -90, 91)
-        drift_handler = DriftHandler(self.ncfile, self.time_range,
-                                     self.order, self.gcp_list)
+        with patch(
+            'priima.drift_handler.get_half_region_size',
+            return_value=100_000.0
+        ) as get_half_region_size:
+            drift_handler = DriftHandler(
+                self.ncfile, self.time_range, self.gcp_list
+            )
 
-        roi_drift_dict = \
-            drift_handler.subset_roi_from_meshgrid(self.drift_dict)
-        expected_min_lon = 19
-        expected_max_lon = 30
-        expected_min_lat = -53
-        expected_max_lat = -46
+            roi_drift_dict = \
+                drift_handler.subset_roi_from_meshgrid(self.drift_dict)
+            get_half_region_size.assert_called_once()
+            expected_min_lon = 19
+            expected_max_lon = 30
+            expected_min_lat = -53
+            expected_max_lat = -46
 
-        self.assertEqual(roi_drift_dict["lon"].min(), expected_min_lon)
-        self.assertEqual(roi_drift_dict["lon"].max(), expected_max_lon)
-        self.assertEqual(roi_drift_dict["lat"].min(), expected_min_lat)
-        self.assertEqual(roi_drift_dict["lat"].max(), expected_max_lat)
+            self.assertEqual(roi_drift_dict["lon"].min(), expected_min_lon)
+            self.assertEqual(roi_drift_dict["lon"].max(), expected_max_lon)
+            self.assertEqual(roi_drift_dict["lat"].min(), expected_min_lat)
+            self.assertEqual(roi_drift_dict["lat"].max(), expected_max_lat)
 
     @patch("priima.drift_handler.DriftHandler._read_drift")
     def test_proper_reader_is_called_when_nextsim_data_are_used(self,
                                                                 mock_read):
-        self.order.data_source = "NEXTSIM"
         nextsim_path = create_temporary_nextsim_file()
         self.ncfile = nextsim_path
-        drift_handler = DriftHandler(self.ncfile, self.time_range,
-                                     self.order, self.gcp_list)
+        drift_handler = DriftHandler(
+            self.ncfile, self.time_range, self.gcp_list
+        )
         try:
             drift_handler.compute_drift()
         except Exception as ex:
@@ -136,8 +127,9 @@ class TestDriftHandler(TestCase):
                                                               mock_read):
         nextsim_path = create_temporary_nextsim_file()
         self.ncfile = nextsim_path
-        drift_handler = DriftHandler(self.ncfile, self.time_range,
-                                     self.order, self.gcp_list)
+        drift_handler = DriftHandler(
+            self.ncfile, self.time_range, self.gcp_list
+        )
         try:
             drift_handler.compute_drift()
         except Exception as ex:
@@ -148,12 +140,12 @@ class TestDriftHandler(TestCase):
 
     def test_read_drift_loads_nextsim_data(self):
         nextsim_path = create_temporary_nextsim_file()
-        self.order.data_source = "NEXTSIM"
         self.ncfile = nextsim_path
         self.time_range = [datetime(2022, 3, 1, 20, 0),
                            datetime(2022, 3, 1, 20, 0)]
-        drift_handler = DriftHandler(self.ncfile, self.time_range,
-                                     self.order, self.gcp_list)
+        drift_handler = DriftHandler(
+            self.ncfile, self.time_range, self.gcp_list
+        )
         drift_dict = drift_handler._read_drift()
         rmtree(os.path.dirname(nextsim_path))
 

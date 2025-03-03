@@ -45,10 +45,13 @@ libyear:
 pylint:
 	$(ACTIVATE_VENV) pylint priima/ tests/
 
-check_style:
-	$(ACTIVATE_VENV) flake8 bin/ priima/ tests/
+hadolint:
+	$(ACTIVATE_VENV) hadolint docker/priima/Dockerfile
 
-lint: check_style pylint libyear
+check_style:
+	$(ACTIVATE_VENV) flake8 priima/ tests/
+
+lint: hadolint check_style pylint libyear
 
 docker-image:
 	docker-compose build priima
@@ -62,4 +65,3 @@ clean:
 cover-clean:
 	rm -rf htmlcov
 	rm -f .coverage
-

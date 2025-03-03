@@ -23,14 +23,18 @@ from matplotlib import path
 from netCDF4 import Dataset
 from pyproj import Proj, transform
 
+from priima.config import Config
+from priima.geo_tools import get_half_region_size
 from priima.projection import get_projection
 
 
 class DriftHandler:
-    def __init__(self, ncfile, time_range, order, gcp_list):
-        self.ncfile = ncfile
+    def __init__(self, ncfile, time_range, gcp_list):
+        if isinstance(ncfile, list):
+            self.ncfiles = ncfile
+        else:
+            self.ncfiles = [ncfile]
         self.time_range = time_range
-        self.order = order
         self.gcp_list = gcp_list
 
     def compute_drift(self):
@@ -43,7 +47,7 @@ class DriftHandler:
         return [uice, vice]
 
     def subset_roi_from_meshgrid(self, drift_dict):
-        half_region_size = self.order.region_size*1000.0/2.0*4
+        half_region_size = get_half_region_size() * 4.0
         cx, cy = self._project_coord(invert=False)
         cxul = cx - half_region_size
         cxlr = cx + half_region_size
@@ -56,7 +60,7 @@ class DriftHandler:
         p = path.Path(mypath)
 
         if 'xx' not in drift_dict:
-            projection = get_projection(self.order)
+            projection = get_projection()
             wgs84 = Proj("+init=EPSG:4326")
 
             if len(drift_dict['lon'].shape) == 1:
@@ -95,7 +99,7 @@ class DriftHandler:
         return drift_dict
 
     def _project_coord(self, invert=False):
-        projection = get_projection(self.order)
+        projection = get_projection()
         if invert:
             inProj = projection
             outProj = Proj(init='epsg:4326')
@@ -103,7 +107,7 @@ class DriftHandler:
             inProj = Proj(init='epsg:4326')
             outProj = projection
 
-        lat, lon = self.order.center
+        lat, lon = Config.instance().center
         xx, yy = transform(inProj, outProj, lon, lat)
 
         return xx, yy
@@ -151,15 +155,14 @@ class DriftHandler:
 
         return vgcp, ugcp
 
+    # pylint: disable=possibly-used-before-assignment
     def _read_drift(self):
         """
 
         """
         ind = 0
-        if not isinstance(self.ncfile, list):
-            ncfiles = [self.ncfile]
 
-        if self.order.data_source == "TOPAZ":
+        if Config.instance().data_source == "TOPAZ":
             uice_var_name = "uice"
             vice_var_name = "vice"
             data_type = "topaz"
@@ -171,7 +174,7 @@ class DriftHandler:
             data_type = "nextsim"
             xy_scale_factor = 1
 
-        for filename in ncfiles:
+        for filename in self.ncfiles:
             dataset = Dataset(filename)
             dataset_time = dataset.variables['time'][:]
             time_window_index = self._select_time_window(

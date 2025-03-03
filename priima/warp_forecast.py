@@ -26,42 +26,41 @@ from osgeo import osr
 from pyproj import Proj, transform
 
 from priima.config import Config
-from priima.projection import get_projection
+from priima.geo_tools import get_half_region_size
+from priima.projection import get_projection, get_projection_epsg
 
 
-def reproject2roi(filename, order):
+def reproject2roi(filename):
     """
     Reproject the images to the relevant polar stereographic projection
 
     :param filename: Filename including absolute path
     :type filename: string
-
-    :param order: Order parameters like center, region size etc.
-    :type order: Order object
     """
-    warp_command_string = warp_command(filename, order)
+    warp_command_string = warp_command(filename)
     call(warp_command_string, shell=True)
     print(warp_command_string)
 
-    return filename.replace(".tiff", "_roi.tiff")
+    return filename.with_stem(f"{filename.stem}_roi")
 
 
-def warp_command(filename, order):
-    proj = Proj(order.epsg)
-    center_lat, center_lon = order.center[:]
+def warp_command(filename):
+    epsg_code = get_projection_epsg()
+    proj = Proj(epsg_code)
+    center_lat, center_lon = Config.instance().center[:]
     center_x_m, center_y_m = proj(center_lon, center_lat)
-    half_region_size = order.region_size*1000.0/2.0
+    half_region_size = get_half_region_size()
     ll_x_m = center_x_m - half_region_size
     ll_y_m = center_y_m - half_region_size
     ur_x_m = center_x_m + half_region_size
     ur_y_m = center_y_m + half_region_size
-    output_name = filename.replace(".tiff", "_roi.tiff")
+    output_name = filename.with_stem(f"{filename.stem}_roi")
+    resolution = Config.instance().output_resolution
 
     warp_command = (
         f"gdalwarp -overwrite "
-        f"-tr {order.resolution} {order.resolution} "
-        f"-r near -multi -srcnodata 0 -dstnodata 0 -order 3 "
-        f"-t_srs '{order.epsg}' "
+        f"-tr {resolution} {resolution} -r near -multi -srcnodata 0 "
+        f"-dstnodata 0 -order 3 -t_srs '+init=epsg:{epsg_code}' "
         f"-te {ll_x_m:.1f} {ll_y_m:.1f} {ur_x_m:.1f} {ur_y_m:.1f} "
         f"{filename} {output_name}"
     )
@@ -79,7 +78,9 @@ def compute_time_range(filename, forecast_duration):
     :param forecast_duration: Time step for the forecast in hours
     :type forecast_duration: integer
     """
-    match = re.search(r"_(?P<start_time>\d{8}T\d{2})\d{4}_\d{8}", filename)
+    match = re.search(
+        r"_(?P<start_time>\d{8}T\d{2})\d{4}_", str(filename)
+    )
     start_time = parse(match.group('start_time'))
 
     # time range only reported with hourly resolution: minutes and seconds
@@ -105,7 +106,7 @@ def compute_displacement(drift, forecast_step):
     return drift_in_meters
 
 
-def update_point_location(order, gcp_list_dynamic, drift):
+def update_point_location(gcp_list_dynamic, drift):
     gcp_list_updated = []
     if isinstance(drift[0], list):
         udrift = np.array(drift[0])
@@ -116,7 +117,7 @@ def update_point_location(order, gcp_list_dynamic, drift):
     udrift[np.isnan(udrift)] = 0
     vdrift[np.isnan(vdrift)] = 0
     ind = 0
-    outProj = get_projection(order)
+    outProj = get_projection()
     inProj = Proj(init='epsg:4326')
 
     for gcp in gcp_list_dynamic:
@@ -200,9 +201,9 @@ def is_point_inland(point):
     Determins if a point belongs to the land.
     """
     if point[1] > 0:
-        shapefile = "shapefiles/arctic_landmask.shp"
+        shapefile = "dnps_shapefiles/shapefiles/arctic_landmask.shp"
     else:
-        shapefile = "shapefiles/antarctic_landmask.shp"
+        shapefile = "dnps_shapefiles/shapefiles/antarctic_landmask.shp"
 
     point = shapely.geometry.Point(point[0], point[1])  # lon, lat
 
@@ -237,8 +238,7 @@ def plot_polygon(poly, points):
     plt.savefig("polygon.png")
 
 
-def create_transformation_matrix(dataset, gcp_list_initial, gcp_list_ending,
-                                 grid_method):
+def create_transformation_matrix(dataset, gcp_list_initial, gcp_list_ending):
     xpix_drifted = []
     ypix_drifted = []
     lon_projected_list = []
@@ -270,18 +270,13 @@ def create_transformation_matrix(dataset, gcp_list_initial, gcp_list_ending,
         starting_pos_test.append((1*gcp.GCPPixel, gcp.GCPLine))
         ending_pos_test.append((1*gcp_end.GCPPixel, gcp_end.GCPLine))
 
-    if grid_method == 'optimize':
-        ending_pos = list(zip(xpix_drifted, ypix_drifted))
-        ending_pos = np.array(starting_pos_test) + np.array(ending_pos)
-        starting_pos = starting_pos_test
-    else:
-        xpix_initial = list(
-            range(0, dataset.RasterXSize, Config.instance.gcp_separation))
-        xpix_initial.append(dataset.RasterXSize)
-        ypix_initial = list(
-            range(0, dataset.RasterYSize, Config.instance.gcp_separation))
-        ypix_initial.append(dataset.RasterXSize)
-        starting_pos = [(xi, yi) for xi in xpix_initial for yi in ypix_initial]
+    xpix_initial = list(
+        range(0, dataset.RasterXSize, Config.instance().gcp_separation))
+    xpix_initial.append(dataset.RasterXSize)
+    ypix_initial = list(
+        range(0, dataset.RasterYSize, Config.instance().gcp_separation))
+    ypix_initial.append(dataset.RasterXSize)
+    starting_pos = [(xi, yi) for xi in xpix_initial for yi in ypix_initial]
 
     ending_pos = list(zip(xpix_drifted, ypix_drifted))
     ending_pos = np.array(starting_pos) + np.array(ending_pos)

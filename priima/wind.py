@@ -25,50 +25,41 @@ import numpy as np
 from netCDF4 import Dataset
 from osgeo import gdal, ogr, osr
 
+from priima.config import Config
 from priima.drift_handler import DriftHandler
 from priima.icon import convert_icon_time_to_datetime, process_icon_fields
 
 
-def compute_drift_from_wind(config, time_range, data_source, order,
-                            gcp_list, tide_data):
+def compute_drift_from_wind(time_range, gcp_list):
     """
     Computes the drift vectors
     """
-    data_path = config.paths.data_path
-    if data_source == "ICON":
-        wind_dict, wind_file = read_wind_from_icon(
-                time_range, data_path, order, config, tide_data)
-    else:
-        wind_dict = read_wind(data_path, time_range)
+    wind_dict, wind_file = read_wind_from_icon(time_range)
 
     wind_dict['time'] = convert_icon_time_to_datetime(wind_dict)
 
-    drift_handler = DriftHandler(wind_file, time_range, order,
-                                 gcp_list)
+    drift_handler = DriftHandler(wind_file, time_range, gcp_list)
     wind_dict = \
         drift_handler.subset_roi_from_meshgrid(wind_dict)
     vice, uice = \
         drift_handler.resample_drift(wind_dict)
-    u_drift, v_drift = wind2drift(uice, vice, order)
-    # plot_icon_wind(wind_dict, order)
-    # test if winddrift is the expected one
+    u_drift, v_drift = wind2drift(uice, vice)
     uicewind = wind_dict['uice'].flatten()
     vicewind = wind_dict['vice'].flatten()
-    u_winddrift, v_winddrift = wind2drift(uicewind, vicewind, order)
+    u_winddrift, v_winddrift = wind2drift(uicewind, vicewind)
     u_winddrift = np.reshape(u_winddrift, wind_dict['uice'].shape)
     v_winddrift = np.reshape(v_winddrift, wind_dict['vice'].shape)
     winddrift_dict = wind_dict
     winddrift_dict['uice'] = u_winddrift
     winddrift_dict['vice'] = v_winddrift
-    if order.plot_wind:
-        plot_icon_wind(winddrift_dict, order)
+    if Config.instance().plot_wind:
+        plot_icon_wind(winddrift_dict)
 
     return u_drift, v_drift
 
 
-def read_wind_from_icon(time_range, data_path, order, config, tide_data):
-    wind_file = process_icon_fields(time_range, data_path, order, config,
-                                    tide_data)
+def read_wind_from_icon(time_range):
+    wind_file = process_icon_fields(time_range)
     wind_dict = prepare_wind_dict_from_icon(wind_file)
 
     return wind_dict, wind_file
@@ -100,44 +91,6 @@ def prepare_wind_dict_from_icon(path):
                  "v_scale": 1,
                  "time": time,
                  "time_since": time_since
-                 }
-
-    return wind_dict
-
-
-def read_wind(path, time_range):
-    """
-    Reads and returns the ensemble wind fields given in
-    netCDF format and dimensions within a defined time slot:
-    [time, ensemble, lats, lons]
-
-    :param path: Full path to the netCDF file
-    :type path: string
-
-    :param time_range: range between data acquisition and desired forecast
-    :type time_range: list of two datetime objects
-    """
-    dataset = Dataset(path)
-    dataset_time = dataset.variables['time'][:]
-    time_window_index = select_time_window(dataset_time, time_range,
-                                           data_type='ecmwf')
-
-    lon = dataset.variables['longitude'][:]
-    lat = dataset.variables['latitude'][:]
-    u_wind = dataset.variables['u10'][time_window_index, :, :, :]
-    u_wind_scale = dataset.variables['u10'].scale_factor
-    u_wind_offset = dataset.variables['u10'].add_offset
-
-    v_wind = dataset.variables['v10'][time_window_index, :, :, :]
-    v_wind_scale = dataset.variables['v10'].scale_factor
-    v_wind_offset = dataset.variables['v10'].add_offset
-
-    wind_dict = {"longitude": lon, "latitude": lat,
-                 "u_wind": u_wind, "v_wind": v_wind,
-                 "u_offset": u_wind_offset,
-                 "u_scale": u_wind_scale,
-                 "v_offset": v_wind_offset,
-                 "v_scale": v_wind_scale
                  }
 
     return wind_dict
@@ -193,7 +146,7 @@ def compute_wind(wind_dict):
     return [u_wind_mean, v_wind_mean]
 
 
-def wind2drift(u_wind, v_wind, order):
+def wind2drift(u_wind, v_wind):
     """
     Converts wind vectors to drift vectors following the rule of thumb
     that drift velocity is on average 2.5% of the wind velocity with a
@@ -208,7 +161,7 @@ def wind2drift(u_wind, v_wind, order):
     if np.isscalar(u_wind):
         u_wind = [u_wind]
         v_wind = [v_wind]
-    if order.center[0] > 0:
+    if Config.instance().center[0] > 0:
         rotation_angle = 25
     else:
         rotation_angle = 335
@@ -296,7 +249,7 @@ def prepare_drift_from_wind_for_qgis(wind_dict):
          shell=True)
 
 
-def plot_icon_wind(wind_dict, order):
+def plot_icon_wind(wind_dict):
 
     uwind = wind_dict['uice'].mean(axis=0)[:, :]
     vwind = wind_dict['vice'].mean(axis=0)[:, :]
@@ -306,8 +259,8 @@ def plot_icon_wind(wind_dict, order):
 
     windspeed = (uwind ** 2 + vwind ** 2) ** 0.5
     plt.figure(figsize=(15, 15))
-    lat_ts = order.center[0]
-    lon_0 = order.center[1]
+    lat_ts = Config.instance().center[0]
+    lon_0 = Config.instance().center[1]
     stere_centralized = ccrs.Stereographic(
         central_latitude=lat_ts, central_longitude=lon_0)
     ax = plt.axes(projection=stere_centralized)
@@ -380,5 +333,6 @@ def plot_icon_wind(wind_dict, order):
 
     cbar.set_label('wind in m/s', rotation=0)
 
-    plt.savefig('icon_wind_' + date_str_for_file)
+    image_name = 'icon_wind_' + date_str_for_file
+    plt.savefig(Config.instance().output_dir / image_name)
     plt.close()

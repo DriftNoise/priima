@@ -16,7 +16,7 @@ PRIIMA. If not, see https://www.gnu.org/licenses/gpl-3.0.html.
 import tempfile
 from unittest import TestCase, skip
 
-from priima.order import Order
+from priima.config import Config
 from priima.wind import prepare_wind_dict_from_icon, wind2drift
 
 
@@ -25,21 +25,6 @@ class TestIconLibrary(TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.icon_file_regrided = ("tests/data/ICON_iko_single_level_elements"
                                    "_world_combined_10M_U_U_regridded.nc")
-
-        order_data = dict(
-            customer_name="Bob Smith",
-            customer_email_address="bob@example.com",
-            order_name="priima_order",
-            sentinel1_order_number=15,
-            forecast_duration=40,  # hours
-            center=[70.0, 45.0],
-            region_size=100,
-            resolution=100,
-            data_source="TOPAZ",
-            grid_method="mpl",
-            use_tides=False
-        )
-        self.order = Order(order_data=order_data)
 
     @skip('test data file missing')
     def test_prepare_wind_dict_from_icon_returns_expected_keys(self):
@@ -63,7 +48,7 @@ class TestIconLibrary(TestCase):
         u_component_initial = 0
         v_component_initial = 4
         u_component_rotated, v_component_rotated = \
-            wind2drift(u_component_initial, v_component_initial, self.order)
+            wind2drift(u_component_initial, v_component_initial)
         u_component_expected = 0.042
         v_component_expected = 0.091
 
@@ -72,11 +57,11 @@ class TestIconLibrary(TestCase):
                          [u_component_expected, v_component_expected])
 
     def test_wind2drift_returns_expected_components_for_sh_rotation(self):
-        self.order.center = [-70, 45]
+        Config.set_attribute('center', [-70, 45])
         u_component_initial = 0
         v_component_initial = 4
         u_component_rotated, v_component_rotated = \
-            wind2drift(u_component_initial, v_component_initial, self.order)
+            wind2drift(u_component_initial, v_component_initial)
         u_component_expected = -0.042
         v_component_expected = 0.091
 

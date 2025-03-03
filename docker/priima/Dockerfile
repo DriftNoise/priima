@@ -11,44 +11,48 @@
 # You should have received a copy of the GNU General Public License along with
 # PRIIMA. If not, see https://www.gnu.org/licenses/gpl-3.0.html.
 
-FROM python:3.7-buster
+FROM python:3.10-bookworm
 
-RUN apt-get update && apt-get install -y build-essential libpython3-dev virtualenv libgdal-dev gdal-bin nco cdo libffi-dev cmake libopencv-dev libboost-all-dev mailutils
-RUN adduser --disabled-password --gecos "" priimauser
+RUN apt-get update && apt-get install -y gdal-bin=3.6.2+dfsg-1+b2 \
+ libgdal-dev=3.6.2+dfsg-1+b2 nco=5.1.4-1+deb12u1 cdo=2.1.1-1+deb12u1 \
+ python3-dev=3.11.2-1+b1 python3-venv=3.11.2-1+b1 libffi-dev=3.4.4-1 \
+ libopencv-dev=4.6.0+dfsg-12 cmake=3.25.1-1 libboost-all-dev=1.74.0.3 \
+ --no-install-recommends \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
 
-ENV APP_ROOT=/home/priimauser/priima
-RUN mkdir -p $APP_ROOT && chown -R priimauser:priimauser $APP_ROOT
-RUN mkdir -p /data && chown -R priimauser:priimauser /data
-RUN mkdir -p $APP_ROOT/logs && chown -R priimauser:priimauser $APP_ROOT/logs
-RUN mkdir -p $APP_ROOT/orders && chown -R priimauser:priimauser $APP_ROOT/orders
+RUN adduser --disabled-password --gecos "" ossi
+
+ENV APP_ROOT=/home/ossi/priima
+RUN mkdir -p /data && chown -R ossi:ossi /data
 WORKDIR $APP_ROOT
+RUN mkdir logs && chown -R ossi:ossi .
 
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-COPY priima $APP_ROOT/priima
-COPY bin $APP_ROOT/bin
-COPY priima.config.yml $APP_ROOT/priima.config.yml
 COPY matplotlibrc $APP_ROOT/matplotlibrc
 COPY devops $APP_ROOT/devops
 COPY base_requirements.txt $APP_ROOT/base_requirements.txt
 COPY requirements.txt $APP_ROOT/requirements.txt
 COPY Makefile $APP_ROOT/Makefile
-COPY shapefiles $APP_ROOT/shapefiles
-# The secrets file isn't copied because it is not currently intended to send
-# data to users via email; this is the only current use of secrets
-# information in PRIIMA.
-# COPY docker/priima/secrets.json $APP_ROOT/secrets.json
-COPY icon_grid $APP_ROOT/icon_grid
 COPY fast_cast $APP_ROOT/fast_cast
-# need to remove any local pre-existing builds, otherwise FastCast won't
-# build inside Docker
-RUN rm -rf $APP_ROOT/fast_cast/build
-RUN chown -R priimauser:priimauser $APP_ROOT/fast_cast/
+RUN chown -R ossi:ossi $APP_ROOT/fast_cast/
 
-USER priimauser
-RUN ./devops/bin/install-deps
-RUN make fast_cast
+USER ossi
+RUN ./devops/bin/install-deps \
+ && make fast_cast
 
-ENV PATH $APP_ROOT/venv/bin:$PATH
-ENV PYTHONPATH $APP_ROOT
+RUN mkdir $APP_ROOT/icon_grid \
+ && wget -q -O $APP_ROOT/icon_grid/ICON_GLOBAL2WORLD_0125_EASY.tar.bz2 \
+ https://opendata.dwd.de/weather/lib/cdo/ICON_GLOBAL2WORLD_0125_EASY.tar.bz2 \
+ && tar -xjf $APP_ROOT/icon_grid/ICON_GLOBAL2WORLD_0125_EASY.tar.bz2 \
+ -C $APP_ROOT/icon_grid/
+RUN chown -R ossi:ossi $APP_ROOT/icon_grid/
+
+COPY priima $APP_ROOT/priima
+
+ENV PATH=$APP_ROOT/venv/bin:$PATH
+ENV PYTHONPATH=$APP_ROOT
+
+ENTRYPOINT ["python3", "priima/image_forecast.py"]

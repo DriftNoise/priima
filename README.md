@@ -14,59 +14,100 @@ PRIIMA. If not, see https://www.gnu.org/licenses/gpl-3.0.html.
 
 # PRIIMA
 
-PRIIMA stands for PRedicted Ice IMAges and combines (1) a static Sentinel-1 SAR
-image of sea ice with (2) a modelled sea ice drift forecast to produce (3) a series of
-manipulated Sentinel-1 images visualizing potential future positions of sea-ice.
-Merging all the produced forecast Sentinel-1 images into an animated
-gif or a video file creates animations of sea-ice movement. You
-can think of it as something similar to the moving rain radar images
-in a modern weather app, showing you a predicted rain pattern of the
-next hours. An example PRIIMA animation is shown
-[here](https://driftnoise.com/priima.html).
+PRIIMA stands for **PR**edicted **I**ce **IMA**ges and combines a static SAR
+or otherwise remotely sensed image of sea ice with a modelled sea ice drift
+forecast to produce a series of manipulated images visualizing potential
+future positions of sea-ice.
+Merging all the produced forecast satellite images into an animated gif or a
+video file creates animations of sea-ice movement. You can think of it as
+something similar to the moving rain radar images in a modern weather app,
+showing you a predicted rain pattern of the next hours. An example PRIIMA
+animation is shown on the
+[PRIIMA project overview](https://driftnoise.com/priima.html). The development
+of PRIIMA was funded by the [ESA kickstart program](https://business.esa.int/news/kick-start-activities-new-funding-opportunity-for-innovative-applications-ideas).
 
-Beside the actual Sentinel-1 image PRIIMA needs either
-Arctic sea-ice drift forecasts from the Arctic
-[TOPAZ4 system](https://www.researchgate.net/publication/258687774_TOPAZ4_An_ocean-sea_ice_data_assimilation_system_for_the_North_Atlantic_and_Arcticasystem)
-available via the [Copernicus Marine Service](https://marine.copernicus.eu/)
-or for both polar regions - a wind forecast from the global
+Possible model inputs are either sea-ice drift forecasts from the pan-Arctic
+[NeXtSIM system](https://data.marine.copernicus.eu/product/ARCTIC_ANALYSISFORECAST_PHY_ICE_002_011/description)
+available via the Copernicus Marine Service or, the globally available wind
+forecast from the
 [ICON weather model](https://www.dwd.de/EN/research/weatherforecasting/num_modelling/01_num_weather_prediction_modells/icon_description.html)
-provided by the DWD.
-
-PRIIMA was initially built during an ESA kick start initiative with the same name.
-
-More information on the involved algorithms and methods are explained in the
-[algorithm explanation and basic principles documentation](docs/algorithm-explanation.md).
+provided by the German Weather Service DWD. While NeXtSIM forecasts the ice
+drift over the next nine days, ICON only forecasts wind for about 3 days into
+the future. NeXtSIM ice drift can be used as-is, while the wind values are
+scaled to guesstimate the expected ice drift from them by applying the Nansen
+rule (2.5% of wind speed and wind direction +/- 25° on Northern/Southern
+hemisphere).
 
 ## Usage
 
-From a local development environment:
+Pull the repository and build a `priima` docker image by executing
 
 ```
-$ source venv/bin/activate
-$ PYTHONPATH=$PWD python priima/image_forecast.py --order-file orders/myorder
+docker compose build
 ```
 
-or equivalently from a Docker container:
+### Preparations
+
+Get **SAR imagery** in GRD format from your source of trust (for example the
+[Copernicus Dataspace](https://browser.dataspace.copernicus.eu) holding
+Sentinel-1 imagery or the [EODMS Portal](https://www.eodms-sgdot.nrcan-rncan.gc.ca/))
+and (optional but recommended) transform the images into a suitable projection
+(polar stereographic) by running a geometric correction on them. This has the
+effect that the images will be correctly converted from radar geometry (GRD)
+into a projected map format using a DEM. GDAL can also do the projection but
+will not take into account SAR geometry artifacts and, more severely, GDAL is
+flawed when it comes to the poles or to the antimeridian (180° E/W). The
+`priima` program operates with polar stereographic projections and will use
+GDAL to reproject incoming images. Lastly, it is important that the used
+image file contains the acquisition date in the format `_<YYYYMMDD>T<hhmmss>`.
+
+**Forecast ice drift or wind data** is also required. It needs to cover the
+timespan of the image forecast, starting with the timestamp of the image and
+going into the future for as many hours as needed. All forecast files need
+to be present in a single directory. For NEXTSIM, files of the product
+`cmems_mod_arc_phy_anfc_nextsim_hm` are required. ICON wind forecast files
+can be found [here](https://opendata.dwd.de/weather/nwp/icon/grib/).
+
+### Running a Forecast
+
+A `priima` docker container can then be run like so:
 
 ```
-$ docker-compose run --volume /path/to/local/data/dir:/data --volume /path/to/order/dir:/orders \
-    priima python priima/image_forecast.py --order-file /orders/<order-file>.json --no-send
+docker compose run --rm --volume /input/model/data/:/model_data \
+--volume /out/data/:/out_dir --volume /image/data:/image_data priima \
+--image /image_data/s1_9572_arctic_20241115T060000.tif \
+--forecast-duration 12 --data-source NEXTSIM
 ```
 
-To run PRIIMA for a specific Sentinel-1 file, put the TIFF into the order's
-output data path (`<data-path>/forecasts/<customer-name>/<order-name>`) and
-then specify the file to run via the `--sentinel-1-file` command line
-option:
+You'll see that there are three mounted **volumes**:
+* the input model data directory needs to be mapped to `/model_data`. Data for
+  the time in question needs to be already present and is not downloaded
+  automatically.
+* the output directory needs to be mapped to `/out_dir`. An appropriate output
+  subdirectory will be created there.
+* the directory containing the input image (specified with `--image`) needs to
+  be mounted in the container
 
-```
-$ PYTHONPATH=$PWD python priima/image_forecast.py --order-file orders/myorder \
-    --sentinel-1-file <sentinel-1-filename>
-```
+Followed by the docker image name `priima` (or a custom name you may have
+given during build).
 
-## [Local development setup instructions](docs/dev-setup-instructions.md)
-## [ICON usage notes](docs/icon-notes.md)
+Furthermore, the following parameters are passed:
+* `--image` the path of the input image, starting from the mount point of the
+  volume
+* `--forecast-duration` the forecast duration in hours
+* `--data-source` either `NEXTSIM` or `ICON`, the model with which to forecast
+  the ice drift
 
-Where `<data-path>` is configured in the `priima.local_config.yml` via the
-`data_path` key.
+There are some other parameters possible for fine tuning results:
+* `--gcp-separation` the distance between the ground control points to warp the
+  image, in pixels. The default is `1000`.
+* `--output-resolution` the image resolution of the output image, default is
+  `100`.
+* `--gtif-out` to output images in GeoTiff format instead of cloud-optimized
+  GeoTiffs (default)
+* `--video` will output a `.avi` video by combining all `.tif` images found in
+  the output directory
 
-## [Algorithm explanation and basic principles](docs/algorithm-explanation.md)
+## Further Documentation
+
+* [Algorithm explanation and basic principles](docs/algorithm-explanation.md)

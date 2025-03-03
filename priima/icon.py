@@ -13,30 +13,28 @@ You should have received a copy of the GNU General Public License along with
 PRIIMA. If not, see https://www.gnu.org/licenses/gpl-3.0.html.
 """
 
-import argparse
 import bz2
 import datetime
 import errno
 import glob
-import math
 import os
+from pathlib import Path
 from subprocess import call
 
 import numpy as np
 from netCDF4 import Dataset
 
-from icon_grid.POLAR_GRID.antarctic_grid_generator import make_antarctic_grid
 from priima.config import Config
-from priima.smoc import smoc_times_to_datetimes
+from priima.grid_generator import make_antarctic_grid, make_arctic_grid
 
 
-def process_icon_fields(time_step, data_path, order, config, tide_data):
-    # grib_files = parse_command_line_args()
+def process_icon_fields(time_step):
 
-    converted_icon_path = os.path.join(config.paths.icon_path, "converted")
+    converted_icon_path = os.path.join("/var", "tmp", "converted")
+    Path(converted_icon_path).mkdir(parents=True, exist_ok=True)
 
     target_grid = os.path.join(
-        config.paths.grid_path,
+        Config.instance().grid_path,
         "ICON_GLOBAL2WORLD_0125_EASY",
         "target_grid_world_0125.txt")
     if not os.path.exists(target_grid):
@@ -45,7 +43,7 @@ def process_icon_fields(time_step, data_path, order, config, tide_data):
             (f'{target_grid}. You are missing a needed grid file. '
               'Refer to docs/icon-notes.md for help on obtaining it.'))
     weights = os.path.join(
-        config.paths.grid_path,
+        Config.instance().grid_path,
         "ICON_GLOBAL2WORLD_0125_EASY",
         "weights_icogl2world_0125.nc")
     if not os.path.exists(weights):
@@ -57,9 +55,12 @@ def process_icon_fields(time_step, data_path, order, config, tide_data):
     grib_files = select_icon_files(time_step)
     print("Forecast will use following ICON files: {}".format(grib_files))
 
+    decompress_tmp_dir = Path("/var") / "tmp" / "decompressed"
+    decompress_tmp_dir.mkdir(exist_ok=True, parents=True)
     out_list = []
     for ifile in grib_files:
-        decompressed_file = decompress_bz2(ifile)
+        decompressed_file = decompress_bz2(
+            input_file=ifile, output_path=decompress_tmp_dir)
         outfile = decompressed_file.replace('grib2', 'nc')
         outfile = os.path.join(converted_icon_path, os.path.basename(outfile))
 
@@ -72,10 +73,8 @@ def process_icon_fields(time_step, data_path, order, config, tide_data):
 
     combined_file = combine_ncfiles(out_list)
     regridded_file = regrid_regular2polar(
-        combined_file, order, config.paths.grid_path)
-    if order.use_tides:
-        couple_tide_and_wind(regridded_file, tide_data)
-    rotate_velocity(regridded_file, order)
+        combined_file)
+    rotate_velocity(regridded_file)
 
     return regridded_file
 
@@ -114,7 +113,7 @@ def combine_ncfiles(out_list):
     return output_name_all
 
 
-def regrid_regular2polar(filename, order, grid_path):
+def regrid_regular2polar(filename):
     """
     Makes external system call to run CDO and to convert
     the crs from a NetCDF file, from regular to polar grid.
@@ -123,23 +122,20 @@ def regrid_regular2polar(filename, order, grid_path):
     and latitude=>lat.
     """
     output_name = filename.replace('.nc', '_regridded.nc')
-    if order.center[0] > 0:
+    if Config.instance().center[0] > 0:
         grid = os.path.join(
-            grid_path,
-            "POLAR_GRID",
-            "20180426_hr-metno-MODEL-topaz4-ARC-b20180424-fv02.0.nc")
+            Config.instance().grid_path,
+            "arctic_grid.nc")
+        if not os.path.exists(grid):
+            make_arctic_grid(grid)
         if not os.path.exists(grid):
             raise FileNotFoundError(
                 errno.ENOENT, os.strerror(errno.ENOENT),
-                (f'{grid}. You are missing a needed grid file. '
-                  'Refer to docs/icon-notes.md for help on obtaining it.'))
+                f'{grid}. The creation of the grid file went wrong.')
     else:
         grid = os.path.join(
-            grid_path,
-            "POLAR_GRID",
+            Config.instance().grid_path,
             "antarctic_grid.nc")
-        if not os.path.exists(os.path.dirname(grid)):
-            os.makedirs(os.path.dirname(grid))
         if not os.path.exists(grid):
             make_antarctic_grid(grid)
         if not os.path.exists(grid):
@@ -162,46 +158,13 @@ def regrid_regular2polar(filename, order, grid_path):
     return output_name
 
 
-def couple_tide_and_wind(regridded_file, tide_data):
-    wind_nc = Dataset(regridded_file, "r+")
-    uwind = wind_nc.variables["10u"][:]
-    vwind = wind_nc.variables["10v"][:]
-    time_wind = wind_nc.variables["time"][:]
-    time_since = wind_nc.variables["time"].units
-
-    time_dict = {"time_since": time_since, "time": time_wind}
-    time_from_icon = convert_icon_time_to_datetime(time_dict)
-    tide_times = smoc_times_to_datetimes(tide_data["time"])
-    print("tide_times: ", tide_times)
-    print("icon time: ", time_from_icon)
-    time_step = tide_times.index(time_from_icon[0])
-
-    INFLATION = 40
-    rotation_angle = 0
-    drift_phi_radians = math.radians(rotation_angle)
-
-    utide_step = INFLATION * tide_data["utide"][time_step, :, :, :]
-    vtide_step = INFLATION * tide_data["vtide"][time_step, :, :, :]
-
-    utide_step = math.cos(drift_phi_radians)*utide_step + \
-        math.sin(drift_phi_radians)*vtide_step
-    vtide_step = math.cos(drift_phi_radians)*vtide_step - \
-        math.sin(drift_phi_radians)*utide_step
-    wind_nc.variables["10u"][:] = uwind + utide_step
-    wind_nc.variables["10v"][:] = vwind + vtide_step
-    wind_nc.close()
-
-
-def rotate_velocity(path, order):
+def rotate_velocity(path):
     """
     Rotate winds from earth relative to polar grid relative
     some information is here:
     https://www-k12.atmos.washington.edu/~ovens/wrfwinds.html
     https://journals.ametsoc.org/view/journals/apme/47/11/2008jamc1746.1.xml
     https://apps.ecmwf.int/codes/grib/format/grib1/grids/5/
-
-    :param order: The order dictionary, used to determine the
-        hemisphere-dependent parameters
     """
     from priima.wind import prepare_wind_dict_from_icon
 
@@ -219,7 +182,7 @@ def rotate_velocity(path, order):
         # increases (the orientation longitude may or may not appear
         # on a particular grid). In our case, this is -45 for the Arctic and
         # 0 for the Antarctic
-        if order.center[0] > 0:
+        if Config.instance().center[0] > 0:
             lov_lon = -45
         else:
             lov_lon = 0
@@ -232,7 +195,7 @@ def rotate_velocity(path, order):
         # known as the Lambert cone constant.  In the case
         # of a polar stereographic projection, this is one.
         # (positive one for Arctic, negative one for Antarctic)
-        if order.center[0] > 0:
+        if Config.instance().center[0] > 0:
             rotcon_p = 1.0
         else:
             rotcon_p = -1.0
@@ -249,28 +212,12 @@ def rotate_velocity(path, order):
     ds.close()
 
 
-def parse_command_line_args():
-    """
-    Parse command line arguments and return their values
-    """
-    parser = argparse.ArgumentParser(
-        description='Convert triangular grid to lat/lon 0.125x0.125')
-    parser.add_argument('--grib_files', type=str,
-                        help='grib filenames for u and v wind component')
-    args = parser.parse_args()
-
-    if args.grib_files is not None:
-        u_wind, v_wind = args.grib_files.split(',')
-
-    return u_wind, v_wind
-
-
 def select_icon_files(time_step):
     """
     Selects relevant files which are closer in time to the model run.
     The model runs 4 times per day at 00, 06, 12, 18 hours.
     """
-    pattern = os.path.join(Config.instance.paths.icon_path, 'icon*')
+    pattern = os.path.join(Config.instance().data_path, 'icon_global_*bz2')
     files = glob.glob(pattern)
     timestamp = [fl.split('/')[-1].split('_')[-4] for fl in files]
     forchours = [fl.split('/')[-1].split('_')[-3].split('.')[0]
@@ -332,17 +279,11 @@ def convert_icon_time_to_datetime(icon_dict):
     return time
 
 
-def decompress_bz2(filename):
-    decompressed_file = filename.replace('.bz2', '')
-    with open(decompressed_file, 'wb') as new_file:
+def decompress_bz2(*, input_file, output_path):
+    decompressed_file = output_path / Path(input_file).with_suffix('').name
+    with open(str(decompressed_file), 'wb') as new_file:
         decompressor = bz2.BZ2Decompressor()
-        compr_file = open(filename, 'rb').read()
+        compr_file = open(input_file, 'rb').read()
         new_file.write(decompressor.decompress(compr_file))
 
-    return decompressed_file
-
-
-def set_up_icon_subpath(icon_path):
-    converted_subpath = os.path.join(icon_path, "converted")
-    if not os.path.exists(converted_subpath):
-        os.makedirs(converted_subpath)
+    return str(decompressed_file)

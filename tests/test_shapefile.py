@@ -19,6 +19,7 @@ from pathlib import Path
 from unittest import TestCase
 from zipfile import ZipFile
 
+from priima.config import Config
 from priima.shapefile import base_shapefile_name, compress_shapefiles
 
 
@@ -42,7 +43,7 @@ class TestShapefile(TestCase):
             "/some/path/S1_EW_HH_sub_20230325T211045_20230325T211345_"
             "order_name_30_roi.tiff"
         )
-        data_path = self.tempdir
+        Config.set_attribute('output_dir', self.tempdir)
 
         # create a set of files to compress in a very similar manner to how
         # this is used in a production setting: i.e. to bundle shapefiles.
@@ -56,7 +57,7 @@ class TestShapefile(TestCase):
             path.touch()
 
         zip_file = compress_shapefiles(
-            shapefiles_to_compress, data_path, sentinel1_path
+            shapefiles_to_compress, sentinel1_path
         )
 
         self.assertEqual(

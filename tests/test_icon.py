@@ -16,23 +16,19 @@ PRIIMA. If not, see https://www.gnu.org/licenses/gpl-3.0.html.
 import os
 import tempfile
 from datetime import datetime
+from pathlib import Path
 from unittest import TestCase
 
 from priima.config import Config
-from priima.icon import select_icon_files, set_up_icon_subpath
+from priima.icon import select_icon_files
 
 
 class TestIconLibrary(TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
-        config_content = f"""\
-        paths:
-            data_path: "{self.tmpdir.name}/data/"
-        """
-        config_file = os.path.join(self.tmpdir.name, "config.yml")
-        with open(config_file, "w") as fp:
-            fp.write(config_content)
-        self.config = Config(config_file=config_file, local_config_file="")
+        self.config = Config.instance()
+        data_path = Path(self.tmpdir.name)
+        Config.set_attribute("data_path", data_path)
 
         self.icon_files = list([
             "icon_global_icosahedral_single-level_"
@@ -56,9 +52,8 @@ class TestIconLibrary(TestCase):
             "icon_global_icosahedral_single-level_"
             "2019012912_002_V_10M.grib2.bz2",
             ])
-        os.makedirs(self.config.paths.icon_path)
         for filename in self.icon_files:
-            filename = os.path.join(self.config.paths.icon_path, filename)
+            filename = os.path.join(data_path, filename)
             with open(filename, 'w') as fh:
                 fh.write('test')
 
@@ -82,17 +77,3 @@ class TestIconLibrary(TestCase):
 
         self.assertTrue("No ICON forecast available, PRIIMA will exit!"
                         in error.exception.args)
-
-    def test_set_up_icon_subpath_creates_necessary_subpath(self):
-        converted_subpath = os.path.join(
-            self.config.paths.icon_path, "converted"
-        )
-
-        self.assertFalse(os.path.exists(converted_subpath))
-
-        set_up_icon_subpath(self.config.paths.icon_path)
-
-        self.assertTrue(os.path.exists(converted_subpath))
-
-    def tearDown(self):
-        Config._drop()  # pylint: disable=protected-access

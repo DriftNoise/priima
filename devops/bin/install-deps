@@ -15,15 +15,16 @@
 
 set -e
 
-if [ ! -d "venv" ]
+VENV="venv"
+if [ ! -d "$VENV" ]
 then
     PYTHON=$(command -v python3)
-    virtualenv --python="$PYTHON" venv
+    $PYTHON -m venv venv
 fi
 
 # shellcheck source=/dev/null  # don't check venv activate script
 source venv/bin/activate
-pip install -U pip
+pip install -U pip wheel
 pip install -r base_requirements.txt
 
 # header paths must be specified so that GDAL builds inside the virtualenv

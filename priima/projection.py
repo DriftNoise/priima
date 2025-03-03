@@ -15,9 +15,11 @@ PRIIMA. If not, see https://www.gnu.org/licenses/gpl-3.0.html.
 
 from pyproj import Proj
 
+from priima.config import Config
 
-def get_projection(order):
-    if order.center[0] > 0:
+
+def get_projection():
+    if Config.instance().center[0] > 0:
         # epsg 3413
         projection = Proj("+proj=stere +lat_0=90 +lat_ts=70 +lon_0=-45 "
                           "+k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
@@ -27,3 +29,10 @@ def get_projection(order):
                           "+x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
 
     return projection
+
+
+def get_projection_epsg():
+    """Defines the EPSG codes used for each hemisphere"""
+    if Config.instance().center[0] > 0:
+        return 3413
+    return 3031

@@ -15,13 +15,14 @@ PRIIMA. If not, see https://www.gnu.org/licenses/gpl-3.0.html.
 
 import math
 from datetime import datetime
+from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
 
 import numpy as np
 from osgeo import gdal
 
-from priima.order import Order
+from priima.config import Config
 from priima.warp_forecast import (compute_time_range, update_point_location,
                                   warp_command)
 
@@ -37,30 +38,16 @@ class TestWarpForecast(TestCase):
         self.gcp_list = [gcp]
         self.drift = [np.array([0.1]), np.array([-0.2])]
 
-        order_data = dict(
-            customer_name="Bob Smith",
-            customer_email_address="bob@example.com",
-            order_name="mooring-arctic-1",
-            sentinel1_order_number=15,
-            forecast_duration=40,  # hours
-            center=[90.0, 45.0],
-            region_size=100,
-            resolution=100,
-            data_source="TOPAZ",
-            grid_method="mpl",
-            use_tides=False
-        )
-        self.order = Order(order_data=order_data)
+        Config.set_attribute('center', [90.0, 45.0])
 
     @patch('priima.warp_forecast.is_point_inland')
     def test_update_point_location_breaks_if_point_is_already_in_land(
             self, land_mock):
-        update_point_location(self.order, self.gcp_list, self.drift)
+        update_point_location(self.gcp_list, self.drift)
         self.assertFalse(land_mock.called)
 
     def test_gcp_list_is_updated_even_if_point_is_in_land(self):
-        updated_gcp = update_point_location(self.order,
-                                            self.gcp_list, self.drift)
+        updated_gcp = update_point_location(self.gcp_list, self.drift)
 
         self.assertEqual(len(self.gcp_list), len(updated_gcp))
 
@@ -70,8 +57,7 @@ class TestWarpForecast(TestCase):
 
         self.assertEqual(self.gcp_list[0].Info, "")
 
-        updated_gcp = update_point_location(self.order,
-                                            self.gcp_list, self.drift)
+        updated_gcp = update_point_location(self.gcp_list, self.drift)
 
         self.assertEqual(updated_gcp[0].Info, "is_land")
 
@@ -86,8 +72,7 @@ class TestWarpForecast(TestCase):
         gcp.GCPYY = -488002.89
         self.gcp_list = [gcp]
 
-        gcp_updated = update_point_location(self.order,
-                                            self.gcp_list, self.drift)
+        gcp_updated = update_point_location(self.gcp_list, self.drift)
         displacement_x = math.ceil(gcp_updated[0].GCPXX - 581579.20)
         displacement_y = math.ceil(gcp_updated[0].GCPYY - (-488002.89))
 
@@ -105,8 +90,7 @@ class TestWarpForecast(TestCase):
         gcp.GCPYY = 2748005.02
         self.gcp_list = [gcp]
 
-        gcp_updated = update_point_location(self.order,
-                                            self.gcp_list, self.drift)
+        gcp_updated = update_point_location(self.gcp_list, self.drift)
         displacement_x = math.ceil(gcp_updated[0].GCPXX - 240419.29)
         displacement_y = math.ceil(gcp_updated[0].GCPYY - (2748005.02))
 
@@ -127,16 +111,21 @@ class TestWarpForecast(TestCase):
         )
 
     def test_warp_command(self):
-        filename = "blah.tiff"
+        filename = Path("blah.tiff")
+        with patch(
+            'priima.warp_forecast.get_half_region_size',
+            return_value=50_000
+        ) as get_half_region_size:
+            warp_command_string = warp_command(filename)
 
-        warp_command_string = warp_command(filename, self.order)
-
-        self.assertEqual(
-            warp_command_string,
-            (
-                "gdalwarp -overwrite -tr 100 100 -r near -multi -srcnodata 0 "
-                "-dstnodata 0 -order 3 -t_srs '+init=epsg:3413' "
-                "-te -50000.0 -50000.0 50000.0 50000.0 "
-                "blah.tiff blah_roi.tiff"
+            self.assertEqual(
+                warp_command_string,
+                (
+                    "gdalwarp -overwrite -tr 100 100 -r near -multi "
+                    "-srcnodata 0 -dstnodata 0 -order 3 -t_srs "
+                    "'+init=epsg:3413' "
+                    "-te -50000.0 -50000.0 50000.0 50000.0 "
+                    "blah.tiff blah_roi.tiff"
+                )
             )
-        )
+            get_half_region_size.assert_called_once()

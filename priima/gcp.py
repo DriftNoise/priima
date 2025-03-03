@@ -29,14 +29,13 @@ def export_gcp_2csv(gcp_list):
             writer.writerow(line)
 
 
-def create_gcp_from_ul_lr(dst, proj, grid_method, order_data):
+def create_gcp_from_ul_lr(dst, proj):
     gcp_list = []
     ii = 1
     ilon = -1
     xx, yy, x_ind, y_ind, lons, lats, \
         polygon_x, polygon_y, polygon_x_ind, polygon_y_ind, \
-        polygon_lons, polygon_lats = inversion_gcps_recipe(
-            dst, proj, order_data, method=grid_method)
+        polygon_lons, polygon_lats = inversion_gcps_recipe(dst, proj)
 
     for ix in x_ind:
         ilon = ilon + 1
