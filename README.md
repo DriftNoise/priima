@@ -46,6 +46,11 @@ Pull the repository and build a `priima` docker image by executing
 docker compose build
 ```
 
+Necessary open data is then downloaded in the process of building the image:
+
+* land polygons from [OpenStreetMap](https://osmdata.openstreetmap.de/data/land-polygons.html)
+* ICON model grid transformation tables from [DWD](https://www.dwd.de/EN/ourservices/opendata/opendata.html)
+
 ### Preparations
 
 Get **SAR imagery** in GRD format from your source of trust (for example the
