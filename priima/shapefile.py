@@ -19,7 +19,37 @@ import zipfile
 from pathlib import Path
 from subprocess import call
 
+import fiona
+import shapely
+from shapely.strtree import STRtree
+from shapely.validation import make_valid
+
 from priima.config import Config
+
+
+class Shapefile:
+    """
+    A class to represent a shapefile that prepares the used geometries
+    for usage and automatically saves the CRS.
+    """
+    def __init__(self, *, path):
+        self.geometries = []
+        self.crs = None
+        with fiona.open(path) as fh:
+            crs = fiona.crs.to_string(fh.crs)
+            if crs:
+                self.crs = crs
+            else:
+                err_msg = (f"Loaded shapefile does not contain geographic "
+                           f"reference information. File: {path}")
+                raise ValueError(err_msg)
+
+            for shapefile_record in fh:
+                shape = shapely.geometry.shape(shapefile_record["geometry"])
+                self.geometries.append(make_valid(shape))
+
+        # Create an STRtree for fast queries like "is point covered by"
+        self.strtree = STRtree(geoms=self.geometries)
 
 
 def compress_shapefiles(shapefiles, sentinel1_path):

@@ -28,6 +28,7 @@ from pyproj import Proj, transform
 from priima.config import Config
 from priima.geo_tools import get_half_region_size
 from priima.projection import get_projection, get_projection_epsg
+from priima.shapefile import Shapefile
 
 
 def reproject2roi(filename):
@@ -120,6 +121,11 @@ def update_point_location(gcp_list_dynamic, drift):
     outProj = get_projection()
     inProj = Proj(init='epsg:4326')
 
+    if Config.instance().center[0] > 0:
+        landmask = Shapefile(path="shapefiles/arctic_landmask.shp")
+    else:
+        landmask = Shapefile(path="shapefiles/antarctic_landmask.shp")
+
     for gcp in gcp_list_dynamic:
         drift_point = [udrift[ind], vdrift[ind]]
         ind = ind + 1
@@ -133,7 +139,7 @@ def update_point_location(gcp_list_dynamic, drift):
             gcp_list_updated.append(gcp)
             continue
         else:
-            is_inland = is_point_inland(point)
+            is_inland = is_point_inland(point, landmask)
 
         if is_inland:
             displacement = (0, 0)
@@ -196,26 +202,13 @@ def compute_averaged_area_drift(drift):
     return [drift_magnitude, drift_direction]
 
 
-def is_point_inland(point):
+def is_point_inland(point, landmask):
     """
     Determins if a point belongs to the land.
     """
-    if point[1] > 0:
-        shapefile = "shapefiles/arctic_landmask.shp"
-    else:
-        shapefile = "shapefiles/antarctic_landmask.shp"
-
     point = shapely.geometry.Point(point[0], point[1])  # lon, lat
-
-    with fiona.open(shapefile) as fiona_fl:
-        for shapefile_record in fiona_fl:
-            shape = shapely.geometry.shape(shapefile_record["geometry"])
-
-            if shape.contains(point):
-                is_inland = True
-                break
-            else:
-                is_inland = False
+    # Check if the point overlaps any of the geometries
+    is_inland = len(landmask.strtree.query(point, 'covered_by')) > 0
 
     return is_inland
 
