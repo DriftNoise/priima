@@ -28,11 +28,6 @@ PRIIMA sets an initial grid of Ground Control Points (GCP) based on the SAR
 image which will use as input.  For each GCP computes the horizontal u, v
 drift components.
 
-Sometimes it is necessary to exactly control the number of GCPs set, e.g. to
-reproduce the training data used for the neural network produced in the
-Fast-Cast project. For this, refer to
-[Hacks to control the number of GCPs](./docs/priima-hacks-to-set-GCPs.md).
-
 **relevant scripts/functions**
 1. inverse_gcps_recipe.py
     1. inversion_gcps_recipe(): It uses the image dimensions and projection information to workout and
@@ -82,8 +77,6 @@ the same as in the TOPAZ4  case.
        Hemisphere! Check what PRIIMA is producing, a) trajectories b) images. See how ice is moving for every image.
        Compare with subsequent SAR image, and with online wind models where you can see how the wind is blowing e.g.
        use this site: https://earth.nullschool.net/#2020/02/02/0600Z/wind/surface/level/stereographic=-47.75,82.37,3000/loc=17.557,82.319 .
-       More information on comparisons here:
-       https://www.dropbox.com/home/Projects/FASTCAST/Panos_Notes?preview=project_notes.odf
 
     4. couple_tide_and_wind(): Activate with use_tides: True key in a given order. It will linearly add the tidal
        component to the wind. We use an INFLATION = 40 factor to compensate for the physical difference between
@@ -140,8 +133,7 @@ within the buffer, without losing any information.
        also a test if a point is in land or not. If yes it will turn the gcp.Info attribute to True, and the point will not
        move any more for the rest time steps.
 
-    2. compute_pixel_coordinates(): It converts geodetic displacement information into pixel displacement. For more information
-       look at: https://www.dropbox.com/home/Projects/ESA_PRIIMA/Reports/deliverables/final?preview=SSA_priima_final_ver_0_1.docx
+    2. compute_pixel_coordinates(): It converts geodetic displacement information into pixel displacement.
 
     3. create_transformation_matrix(): Creates the matrix with the starting and ending positions for all control points, in both
        pixel and geodetic coordinates. This is the input for the warping function.
