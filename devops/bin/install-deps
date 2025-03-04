@@ -31,15 +31,3 @@ pip install -r base_requirements.txt
 CFLAGS=$(gdal-config --cflags) pip install "GDAL<=$(gdal-config --version)"
 
 pip install -r requirements.txt
-
-# handle Cartopy installation on different GEOS versions
-# Cartopy only supports GEOS 3.7.1 up to and including 0.19.0.post1
-GEOS_VERSION="$(geos-config --version)"
-CARTOPY_20_GEOS_VERSION="3.7.2"
-COMPATIBLE_CARTOPY_20_GEOS_VERSION=$(echo -e "$GEOS_VERSION\\n$CARTOPY_20_GEOS_VERSION" | sort -V | tail -n 1)
-if [ "$GEOS_VERSION" == "$COMPATIBLE_CARTOPY_20_GEOS_VERSION" ]
-then
-    pip install Cartopy==0.21.0
-else
-    pip install Cartopy==0.19.0.post1
-fi
