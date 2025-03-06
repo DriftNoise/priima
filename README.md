@@ -116,3 +116,6 @@ There are some other parameters possible for fine tuning results:
 ## Further Documentation
 
 * [Algorithm explanation and basic principles](docs/algorithm-explanation.md)
+* overview images of the algorithm are found in [docs/img](docs/img)
+
+![](docs/img/priima_algorithm_overview.png)
