@@ -104,8 +104,8 @@ Furthermore, the following parameters are passed:
   the ice drift
 
 There are some other parameters possible for fine tuning results:
-* `--gcp-separation` the distance between the ground control points to warp the
-  image, in pixels. The default is `1000`.
+* `--num-gcps` the number of ground control points which can be `4`, `9`,
+  `16`, `25` or `36`. The default is `4`.
 * `--output-resolution` the image resolution of the output image, default is
   `100`.
 * `--gtif-out` to output images in GeoTiff format instead of cloud-optimized
