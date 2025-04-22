@@ -257,11 +257,13 @@ def create_transformation_matrix(dataset, gcp_list_initial, gcp_list_ending):
         starting_pos_test.append((1*gcp.GCPPixel, gcp.GCPLine))
         ending_pos_test.append((1*gcp_end.GCPPixel, gcp_end.GCPLine))
 
-    xpix_initial = list(
-        range(0, dataset.RasterXSize, Config.instance().gcp_separation))
+    segments_per_side = math.sqrt(Config.instance().num_gcps) - 1
+    x_pix_separation = math.ceil(dataset.RasterXSize / segments_per_side)
+    y_pix_separation = math.ceil(dataset.RasterYSize / segments_per_side)
+
+    xpix_initial = list(range(0, dataset.RasterXSize, x_pix_separation))
     xpix_initial.append(dataset.RasterXSize)
-    ypix_initial = list(
-        range(0, dataset.RasterYSize, Config.instance().gcp_separation))
+    ypix_initial = list(range(0, dataset.RasterYSize, y_pix_separation))
     ypix_initial.append(dataset.RasterXSize)
     starting_pos = [(xi, yi) for xi in xpix_initial for yi in ypix_initial]
 

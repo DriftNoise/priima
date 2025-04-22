@@ -47,8 +47,8 @@ class Config:
                 help='Model from which to derive the ice drift'
             )
             parser.add_argument(
-                '--gcp-separation', default=5000, type=int,
-                help='Space between ground control points in pixels'
+                '--num-gcps', default=4, type=int, choices=[4, 9, 16, 25, 36],
+                help='Number of ground control points'
             )
             parser.add_argument(
                 '--output-resolution', default=100, type=int,

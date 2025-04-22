@@ -18,6 +18,8 @@ based on a known projection, image dimension and pixel size
 Author: Stefan Hendricks
 """
 
+import math
+
 import numpy as np
 from osgeo import osr
 from pyproj import Proj
@@ -64,14 +66,16 @@ def inversion_gcps_recipe(ds, proj):
     extent = (x_min, y_min,
               x_min+x_size*ds.RasterXSize, y_min+y_size*ds.RasterYSize)
 
+    segments_per_side = math.sqrt(Config.instance().num_gcps) - 1
+    x_pix_separation = math.ceil(ds.RasterXSize / segments_per_side)
+    y_pix_separation = math.ceil(ds.RasterYSize / segments_per_side)
+
     # Step1: Compute the projection coordinates for each pixel
 
     # 1.a: Start with creating indices (lets say for every 250 pixels)
     # and make sure to have starting and ending pixels
-    x_ind = np.arange(
-        0, image_dimensions[0]+1, Config.instance().gcp_separation)
-    y_ind = np.arange(
-        0, image_dimensions[1]+1, Config.instance().gcp_separation)
+    x_ind = np.arange(0, image_dimensions[0]+1, x_pix_separation)
+    y_ind = np.arange(0, image_dimensions[1]+1, y_pix_separation)
 
     if x_ind[-1] != image_dimensions[0]:
         x_ind = np.append(x_ind, image_dimensions[0])
