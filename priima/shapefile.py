@@ -44,9 +44,10 @@ class Shapefile:
                            f"reference information. File: {path}")
                 raise ValueError(err_msg)
 
-            for shapefile_record in fh:
-                shape = shapely.geometry.shape(shapefile_record["geometry"])
-                self.geometries.append(make_valid(shape))
+            self.geometries = [
+                shapely.geometry.shape(shp_record["geometry"])
+                for shp_record in fh
+            ]
 
         # Create an STRtree for fast queries like "is point covered by"
         self.strtree = STRtree(geoms=self.geometries)
