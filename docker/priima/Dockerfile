@@ -37,7 +37,7 @@ COPY base_requirements.txt $APP_ROOT/base_requirements.txt
 COPY requirements.txt $APP_ROOT/requirements.txt
 COPY Makefile $APP_ROOT/Makefile
 COPY fast_cast $APP_ROOT/fast_cast
-RUN chown -R ossi:ossi $APP_ROOT/fast_cast/
+RUN chown -R ossi:ossi $APP_ROOT/
 
 USER ossi
 RUN ./devops/bin/install-deps \
@@ -68,7 +68,7 @@ RUN mkdir $APP_ROOT/icon_grid \
  -C $APP_ROOT/icon_grid/
 RUN chown -R ossi:ossi $APP_ROOT/icon_grid/
 
-COPY priima $APP_ROOT/priima
+COPY --chown=ossi:ossi priima $APP_ROOT/priima
 
 ENV PATH=$APP_ROOT/venv/bin:$PATH
 ENV PYTHONPATH=$APP_ROOT
