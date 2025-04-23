@@ -40,7 +40,14 @@ hemisphere).
 
 ## Usage
 
-Pull the repository and build a `priima` docker image by executing
+Pull the repository. Submodules need to be installed either by appending
+`--recurse-submodules` to the `git clone` command or by running
+
+```
+git submodule update --init --recursive
+```
+
+Then build a `priima` docker image by executing
 
 ```
 docker compose build
