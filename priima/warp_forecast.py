@@ -28,7 +28,6 @@ from pyproj import Proj, transform
 from priima.config import Config
 from priima.geo_tools import get_half_region_size
 from priima.projection import get_projection, get_projection_epsg
-from priima.shapefile import Shapefile
 
 
 def reproject2roi(filename):
@@ -107,7 +106,7 @@ def compute_displacement(drift, forecast_step):
     return drift_in_meters
 
 
-def update_point_location(gcp_list_dynamic, drift):
+def update_point_location(gcp_list_dynamic, drift, landmask):
     gcp_list_updated = []
     if isinstance(drift[0], list):
         udrift = np.array(drift[0])
@@ -120,11 +119,6 @@ def update_point_location(gcp_list_dynamic, drift):
     ind = 0
     outProj = get_projection()
     inProj = Proj(init='epsg:4326')
-
-    if Config.instance().center[0] > 0:
-        landmask = Shapefile(path="shapefiles/arctic_landmask.shp")
-    else:
-        landmask = Shapefile(path="shapefiles/antarctic_landmask.shp")
 
     for gcp in gcp_list_dynamic:
         drift_point = [udrift[ind], vdrift[ind]]

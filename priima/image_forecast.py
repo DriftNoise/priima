@@ -28,7 +28,7 @@ from priima.drift_handler import DriftHandler
 from priima.gcp import create_gcp_from_ul_lr, export_gcp_2csv
 from priima.geo_tools import get_center_coordinate
 from priima.preprocessing import warp_image
-from priima.shapefile import base_shapefile_name, convert_csv_to_shp
+from priima.shapefile import Shapefile, base_shapefile_name, convert_csv_to_shp
 from priima.video import create_video
 from priima.warp_forecast import (compute_averaged_area_drift,
                                   compute_time_range,
@@ -64,6 +64,11 @@ def main():
     forecast_steps = range(dt_hours)  # + [dt_decimal]
     gcp_list_dynamic = gcp_list[:]
     drifted_coord = []
+    # setup landmask
+    if Config.instance().center[0] > 0:
+        landmask = Shapefile(path="shapefiles/arctic_landmask.shp")
+    else:
+        landmask = Shapefile(path="shapefiles/antarctic_landmask.shp")
 
     if Config.instance().data_source in ('TOPAZ', 'NEXTSIM'):
 
@@ -96,7 +101,9 @@ def main():
 
             except ValueError:
                 continue
-            gcp_list_dynamic = update_point_location(gcp_list_dynamic, drift)
+            gcp_list_dynamic = update_point_location(
+                gcp_list_dynamic, drift, landmask
+            )
 
             for gld in gcp_list_dynamic:
                 drifted_coord.append([gld.GCPX, gld.GCPY, time_range_step[0]])
@@ -141,7 +148,9 @@ def main():
             time_step = time_range[0] + datetime.timedelta(hours=it)
             drift = compute_drift_from_wind(time_step, gcp_list_dynamic)
 
-            gcp_list_dynamic = update_point_location(gcp_list_dynamic, drift)
+            gcp_list_dynamic = update_point_location(
+                gcp_list_dynamic, drift, landmask
+            )
             for gld in gcp_list_dynamic:
                 drifted_coord.append([gld.GCPX, gld.GCPY, time_step])
 

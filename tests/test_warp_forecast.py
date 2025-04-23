@@ -23,6 +23,7 @@ import numpy as np
 from osgeo import gdal
 
 from priima.config import Config
+from priima.shapefile import Shapefile
 from priima.warp_forecast import (compute_time_range, update_point_location,
                                   warp_command)
 
@@ -39,15 +40,17 @@ class TestWarpForecast(TestCase):
         self.drift = [np.array([0.1]), np.array([-0.2])]
 
         Config.set_attribute('center', [90.0, 45.0])
+        self.landmask = Shapefile(path="shapefiles/arctic_landmask.shp")
 
     @patch('priima.warp_forecast.is_point_inland')
     def test_update_point_location_breaks_if_point_is_already_in_land(
             self, land_mock):
-        update_point_location(self.gcp_list, self.drift)
+        update_point_location(self.gcp_list, self.drift, self.landmask)
         self.assertFalse(land_mock.called)
 
     def test_gcp_list_is_updated_even_if_point_is_in_land(self):
-        updated_gcp = update_point_location(self.gcp_list, self.drift)
+        updated_gcp = update_point_location(
+            self.gcp_list, self.drift, self.landmask)
 
         self.assertEqual(len(self.gcp_list), len(updated_gcp))
 
@@ -57,7 +60,8 @@ class TestWarpForecast(TestCase):
 
         self.assertEqual(self.gcp_list[0].Info, "")
 
-        updated_gcp = update_point_location(self.gcp_list, self.drift)
+        updated_gcp = update_point_location(
+            self.gcp_list, self.drift, self.landmask)
 
         self.assertEqual(updated_gcp[0].Info, "is_land")
 
@@ -72,7 +76,8 @@ class TestWarpForecast(TestCase):
         gcp.GCPYY = -488002.89
         self.gcp_list = [gcp]
 
-        gcp_updated = update_point_location(self.gcp_list, self.drift)
+        gcp_updated = update_point_location(
+            self.gcp_list, self.drift, self.landmask)
         displacement_x = math.ceil(gcp_updated[0].GCPXX - 581579.20)
         displacement_y = math.ceil(gcp_updated[0].GCPYY - (-488002.89))
 
@@ -90,7 +95,8 @@ class TestWarpForecast(TestCase):
         gcp.GCPYY = 2748005.02
         self.gcp_list = [gcp]
 
-        gcp_updated = update_point_location(self.gcp_list, self.drift)
+        gcp_updated = update_point_location(
+            self.gcp_list, self.drift, self.landmask)
         displacement_x = math.ceil(gcp_updated[0].GCPXX - 240419.29)
         displacement_y = math.ceil(gcp_updated[0].GCPYY - (2748005.02))
 
