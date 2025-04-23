@@ -37,6 +37,7 @@ def filter_shapefile_by_latitude(
     else:
         gdf_filtered = gdf[gdf.geometry.centroid.y < latitude_threshold]
 
+    gdf_filtered.loc[:, 'geometry'] = gdf_filtered['geometry'].make_valid()
     gdf_filtered.to_file(output_shapefile)
 
 if __name__ == "__main__":
