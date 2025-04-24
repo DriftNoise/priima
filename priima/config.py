@@ -51,7 +51,7 @@ class Config:
                 help='Number of ground control points'
             )
             parser.add_argument(
-                '--output-resolution', default=100, type=int,
+                '--output-resolution', default=200, type=int,
                 help="Resolution of the output images"
             )
             parser.add_argument(
