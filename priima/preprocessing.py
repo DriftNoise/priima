@@ -97,6 +97,12 @@ def warp_image(
         out_img = tps.warpImage(imbuffer)
         print(f'Warping with FastCast took {time.time() - t} s')
 
+    if out_img.max() == 0:
+        err_msg = (
+            "TPS point fit invalid. Try decreasing the image resolution "
+            "(via --output-resolution)")
+        raise ValueError(err_msg)
+
     write_geotiff(
         forecast_step=forecast_step, image_path=image_path,
         raster_data=out_img, pixels_drift=pixels_drift,
