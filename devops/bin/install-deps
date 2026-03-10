@@ -24,7 +24,7 @@ fi
 
 # shellcheck source=/dev/null  # don't check venv activate script
 source venv/bin/activate
-pip install -U pip wheel
+pip install -U pip==25.0.1 wheel
 pip install -r base_requirements.txt
 
 # header paths must be specified so that GDAL builds inside the virtualenv
