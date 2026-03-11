@@ -217,6 +217,8 @@ def create_output_directory(
         sat = "s1"
     elif "rcm" in Path(Config.instance().image).name.lower():
         sat = "rcm"
+    elif "modis" in Path(Config.instance().image).name.lower():
+        sat = "modis"
     output_dir_name = (
         f"{sat}_{start_time_string}_priima_{data_source}_"
         f"{forecast_duration}h"
