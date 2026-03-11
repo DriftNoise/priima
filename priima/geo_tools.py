@@ -48,6 +48,10 @@ def get_half_region_size():
 
 def transform_to_WGS84(*, x: float, y: float, epsg_code: int):
     """Transforms a projected coordinate to lon / lat"""
-    transformer = pyproj.Transformer.from_crs(f"EPSG:{epsg_code}", "EPSG:4326")
-    lat, lon = transformer.transform(x, y)
+    transformer = pyproj.Transformer.from_crs(
+        f"EPSG:{epsg_code}",
+        "EPSG:4326",
+        always_xy=True,
+    )
+    lon, lat = transformer.transform(x, y)
     return lat, lon
