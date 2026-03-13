@@ -15,82 +15,76 @@ PRIIMA. If not, see https://www.gnu.org/licenses/gpl-3.0.html.
 
 import math
 import re
-from subprocess import call
+import tempfile
+import zipfile
+from datetime import datetime
+from functools import cached_property
+from pathlib import Path
 
-import fiona
 import numpy as np
 import shapely.geometry
 from dateutil.parser import parse
-from dateutil.relativedelta import relativedelta
-from osgeo import osr
+from osgeo import gdal, osr
 from pyproj import Proj, transform
 
 from priima.config import Config
-from priima.geo_tools import get_half_region_size
 from priima.projection import get_projection, get_projection_epsg
 
-
-def reproject2roi(filename):
-    """
-    Reproject the images to the relevant polar stereographic projection
-
-    :param filename: Filename including absolute path
-    :type filename: string
-    """
-    warp_command_string = warp_command(filename)
-    call(warp_command_string, shell=True)
-    print(warp_command_string)
-
-    return filename.with_stem(f"{filename.stem}_roi")
+LEGAL_INPUT_EPSG = [4326, 3413, 3031, 3976]
 
 
-def warp_command(filename):
-    epsg_code = get_projection_epsg()
-    proj = Proj(epsg_code)
-    center_lat, center_lon = Config.instance().center[:]
-    center_x_m, center_y_m = proj(center_lon, center_lat)
-    half_region_size = get_half_region_size()
-    ll_x_m = center_x_m - half_region_size
-    ll_y_m = center_y_m - half_region_size
-    ur_x_m = center_x_m + half_region_size
-    ur_y_m = center_y_m + half_region_size
-    output_name = filename.with_stem(f"{filename.stem}_roi")
-    resolution = Config.instance().output_resolution
+class PriimaImage:
+    def __init__(self, fpath: Path):
+        self.fpath = fpath
 
-    warp_command = (
-        f"gdalwarp -overwrite "
-        f"-tr {resolution} {resolution} -r near -multi -srcnodata 0 "
-        f"-dstnodata 0 -order 3 -t_srs '+init=epsg:{epsg_code}' "
-        f"-te {ll_x_m:.1f} {ll_y_m:.1f} {ur_x_m:.1f} {ur_y_m:.1f} "
-        f"{filename} {output_name}"
-    )
+    @cached_property
+    def start_time(self) -> datetime:
+        time_pattern = r"_(?P<start_time>\d{8}T\d{2})\d{4}"
+        match = re.search(time_pattern, str(self.fpath))
+        try:
+            start_time_string = match.group('start_time')
+        except AttributeError as exc:
+            err_msg = (
+                "No date of format _<YYYYMMDD>T<hhmmss> found in filename %s"
+            )
+            raise ValueError(err_msg % str(self.fpath)) from exc
 
-    return warp_command
+        return parse(start_time_string)
 
+    @property
+    def epsg(self):
+        ds = gdal.Open(str(self.fpath))
+        srs = osr.SpatialReference(wkt=ds.GetProjection())
+        srs.AutoIdentifyEPSG()
+        srs.GetAuthorityCode(None)
 
-def compute_time_range(filename, forecast_duration):
-    """
-    Computes time range to select appropriate drift data
+        return int(srs.GetAuthorityCode(None))
 
-    :param filename: Filename including path of the image to be forecast
-    :type filename: string
-
-    :param forecast_duration: Time step for the forecast in hours
-    :type forecast_duration: integer
-    """
-    match = re.search(
-        r"_(?P<start_time>\d{8}T\d{2})\d{4}_", str(filename)
-    )
-    start_time = parse(match.group('start_time'))
-
-    # time range only reported with hourly resolution: minutes and seconds
-    # are ignored in the time range datetime elements.
-    time_range = [
-        start_time,
-        start_time + relativedelta(hours=forecast_duration)
-    ]
-
-    return time_range
+    def reproject(self):
+        if self.epsg not in LEGAL_INPUT_EPSG:
+            err_msg = "Input image given in unknown input CRS: %s"
+            raise ValueError(err_msg % self.epsg)
+        # reproject to output EPSG and resolution
+        dst_epsg = get_projection_epsg()
+        output_name = f"{self.fpath.stem}_{dst_epsg}"
+        output_fpath = self.fpath.with_stem(output_name)
+        resolution = Config.instance().output_resolution
+        warp_opts = gdal.WarpOptions(
+            srcNodata=0,
+            dstNodata=0,
+            xRes=resolution,
+            yRes=resolution,
+            dstSRS=f"EPSG:{dst_epsg}",
+            resampleAlg='bilinear',
+            overviewLevel=None,
+        )
+        gdal.Warp(
+            str(output_fpath),
+            str(self.fpath),
+            options=warp_opts,
+            overwrite=True,
+        )
+        self.fpath = output_fpath
 
 
 def compute_displacement(drift, forecast_step):

@@ -21,6 +21,7 @@ from glob import glob
 from pathlib import Path
 
 import numpy as np
+from dateutil.relativedelta import relativedelta
 from osgeo import gdal
 
 from priima.config import Config
@@ -30,33 +31,38 @@ from priima.geo_tools import get_center_coordinate
 from priima.preprocessing import warp_image
 from priima.shapefile import Shapefile, base_shapefile_name, convert_csv_to_shp
 from priima.video import create_video
-from priima.warp_forecast import (compute_averaged_area_drift,
-                                  compute_time_range,
-                                  create_transformation_matrix, reproject2roi,
+from priima.warp_forecast import (PriimaImage, compute_averaged_area_drift,
+                                  create_transformation_matrix,
                                   update_point_location)
 from priima.wind import compute_drift_from_wind
 
 
 def main():
+    image = PriimaImage(fpath=Path(Config.instance().image))
     center_coords = get_center_coordinate()
     Config.set_attribute('center', [center_coords[0], center_coords[1]])
 
     output_dir = create_output_directory(
-        image_fname=Path(Config.instance().image),
+        image=image,
         data_source=Config.instance().data_source,
         forecast_duration=Config.instance().forecast_duration
     )
     Config.set_attribute("output_dir", output_dir)
 
-    initial_sar_file = reproject2roi(Path(Config.instance().image))
+    image.reproject()
+    initial_sar_file = image.fpath
     ds = gdal.Open(str(initial_sar_file))
     proj = ds.GetProjection()
     gcp_list = create_gcp_from_ul_lr(ds, proj)
 
     export_gcp_2csv(gcp_list)
 
-    time_range = compute_time_range(
-        initial_sar_file, Config.instance().forecast_duration)
+    time_range = [
+        image.start_time,
+        image.start_time + relativedelta(
+            hours=Config.instance().forecast_duration
+        ),
+    ]
 
     # for local point warp and time varying
     dt = (time_range[1] - time_range[0]).total_seconds()/60./60.
@@ -197,21 +203,13 @@ def main():
 
 def create_output_directory(
     *,
-    image_fname: Path,
+    image: PriimaImage,
     data_source: str,
     forecast_duration: int
-):
+) -> Path:
     """Builds the path to and creates an output directory"""
-    match = re.search(
-        r"_(?P<start_time>\d{8}T\d{6})", str(image_fname)
-    )
-    try:
-        start_time_string = match.group('start_time')
-    except AttributeError as exc:
-        err_msg = (
-            "No date of format _<YYYYMMDD>T<hhmmss> found in filename %s"
-        )
-        raise ValueError(err_msg % image_fname) from exc
+    start_time = image.start_time
+    start_time_string = start_time.strftime('%Y%m%dT%H%M%S')
     sat = "sat"
     if "s1" in Path(Config.instance().image).name.lower():
         sat = "s1"

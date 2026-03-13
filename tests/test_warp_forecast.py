@@ -14,8 +14,6 @@ PRIIMA. If not, see https://www.gnu.org/licenses/gpl-3.0.html.
 """
 
 import math
-from datetime import datetime
-from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
 
