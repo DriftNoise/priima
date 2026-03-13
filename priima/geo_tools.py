@@ -21,7 +21,7 @@ from priima.config import Config
 
 def get_center_coordinate():
     """Retuns the center coordinate of the image"""
-    dataset = gdal.Open(Config.instance().image)
+    dataset = gdal.Open(str(Config.instance().image))
     options = gdal.InfoOptions(format='json')
     center_projected = gdal.Info(
         dataset, options=options)['cornerCoordinates']['center']
