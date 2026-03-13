@@ -37,6 +37,19 @@ class PriimaImage:
     def __init__(self, fpath: Path):
         self.fpath = fpath
 
+        if '.tif' in self.fpath.suffix:
+            ds = gdal.Open(str(self.fpath))
+            if ds.GetProjection == '':
+                err_msg = "Image does not contain projection information"
+                raise ValueError(err_msg)
+        elif 'ALOS' in self.fpath.name and '.zip' in self.fpath.name:
+            self.fpath = extract_alos_archive(self.fpath)
+            # in case of an ALOS image, the config path should no longer point
+            # to the zip archive, but to the extracted image
+            Config.instance().image = self.fpath
+        else:
+            raise ValueError('Unknown file passed to PRIIMA')
+
     @cached_property
     def start_time(self) -> datetime:
         time_pattern = r"_(?P<start_time>\d{8}T\d{2})\d{4}"
@@ -85,6 +98,55 @@ class PriimaImage:
             overwrite=True,
         )
         self.fpath = output_fpath
+
+
+def extract_alos_archive(zip_path: Path) -> Path:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with zipfile.ZipFile(zip_path, 'r') as z:
+            z.extractall(temp_dir)
+        summary_file_list = list(Path(temp_dir).rglob("summary.txt"))
+        if len(summary_file_list) != 1:
+            err_msg = "Found %s summary files in ALOS archive"
+            raise ValueError(err_msg % len(summary_file_list))
+        date_pattern = (
+            r'Img_SceneStartDateTime='
+            r'"(?P<date>\d{8}) (?P<time>\d{2}:\d{2}:\d{2})'
+        )
+        lat_pattern = (
+            r'Img_ImageSceneCenterLatitude="(?P<lat>-?\d+(?:\.\d+)?)"'
+        )
+        text = summary_file_list[0].read_text()
+        date_match = re.search(date_pattern, text)
+        lat_match = re.search(lat_pattern, text)
+        if date_match:
+            date = date_match.group("date")
+            time = date_match.group("time")
+        else:
+            raise ValueError("Cannot find date field in summary.txt")
+        if lat_match:
+            center_lat = float(lat_match.group("lat"))
+        else:
+            raise ValueError("Cannot find center latitude in summary.txt")
+
+        unzipped_image_list = list(Path(temp_dir).rglob("IMG*5GPD"))
+        if len(unzipped_image_list) != 1:
+            err_msg = "Found %s image files in ALOS archive"
+            raise ValueError(err_msg % len(unzipped_image_list))
+        unzipped_image = unzipped_image_list[0]
+        t_string = date + 'T' + time.replace(':', '')
+        new_name = Path(unzipped_image).stem + '_' + t_string + '.tif'
+        target_path = zip_path.with_name(new_name)
+        if center_lat > 0:
+            dest_epsg = "EPSG:3413"
+        else:
+            dest_epsg = "EPSG:3976"
+        warp_opts = gdal.WarpOptions(
+            dstSRS=dest_epsg,
+            dstNodata=0,
+        )
+        gdal.Warp(str(target_path), str(unzipped_image), options=warp_opts)
+
+        return target_path
 
 
 def compute_displacement(drift, forecast_step):
