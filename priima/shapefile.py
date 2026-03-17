@@ -22,7 +22,6 @@ from subprocess import call
 import fiona
 import shapely
 from shapely.strtree import STRtree
-from shapely.validation import make_valid
 
 from priima.config import Config
 

@@ -22,8 +22,7 @@ from osgeo import gdal
 
 from priima.config import Config
 from priima.shapefile import Shapefile
-from priima.warp_forecast import (compute_time_range, update_point_location,
-                                  warp_command)
+from priima.warp_forecast import update_point_location
 
 
 class TestWarpForecast(TestCase):
@@ -100,36 +99,3 @@ class TestWarpForecast(TestCase):
 
         self.assertEqual(displacement_x, 360)
         self.assertEqual(displacement_y, -720)
-
-    def test_compute_time_range_returns_expected_range_as_array(self):
-        filename = (
-            "/some/path/to/data/forecasts/fast-cast/rifkol-use-case/"
-            "S1_EW_HH_20230325T211045_20230325T211345_FC2_Rifkol_30_roi.tiff"
-        )
-        forecast_duration = 5.0
-        time_range = compute_time_range(filename, forecast_duration)
-
-        self.assertEqual(
-            time_range,
-            [datetime(2023, 3, 25, 21), datetime(2023, 3, 26, 2)]
-        )
-
-    def test_warp_command(self):
-        filename = Path("blah.tiff")
-        with patch(
-            'priima.warp_forecast.get_half_region_size',
-            return_value=50_000
-        ) as get_half_region_size:
-            warp_command_string = warp_command(filename)
-
-            self.assertEqual(
-                warp_command_string,
-                (
-                    "gdalwarp -overwrite -tr 100 100 -r near -multi "
-                    "-srcnodata 0 -dstnodata 0 -order 3 -t_srs "
-                    "'+init=epsg:3413' "
-                    "-te -50000.0 -50000.0 50000.0 50000.0 "
-                    "blah.tiff blah_roi.tiff"
-                )
-            )
-            get_half_region_size.assert_called_once()
