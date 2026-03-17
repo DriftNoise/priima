@@ -45,7 +45,7 @@ RUN ./devops/bin/install-deps \
 
 FROM base AS create_landmasks
 
-RUN pip install geopandas==1.0.1 \
+RUN pip install --no-cache-dir geopandas==1.0.1 \
  && mkdir $APP_ROOT/shapefiles \
  && wget -q -O $APP_ROOT/shapefiles/land-polygons-split-4326.zip \
  https://osmdata.openstreetmap.de/download/land-polygons-split-4326.zip \
@@ -58,7 +58,7 @@ FROM base
 
 COPY --from=create_landmasks $APP_ROOT/shapefiles/arctic_landmask.* \
  $APP_ROOT/shapefiles/
-COPY --from=create_landmasks $APP_ROOT/shapefiles/antarctic_landmask.*\
+COPY --from=create_landmasks $APP_ROOT/shapefiles/antarctic_landmask.* \
  $APP_ROOT/shapefiles/
 
 RUN mkdir $APP_ROOT/icon_grid \
